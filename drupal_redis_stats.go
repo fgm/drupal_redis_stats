@@ -1,8 +1,16 @@
+/*
+This simple CLI application scans a Redis database for Drupal 8 cache content.
+
+It then return statistics about that instance, in plain text or JSON.
+ */
 package main
 
 import (
+	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"math"
 	"os"
 	"regexp"
@@ -11,6 +19,8 @@ import (
 	"strings"
 
 	"github.com/gomodule/redigo/redis"
+
+	"code.osinet.fr/fgm/drupal_redis_stats/progress"
 )
 
 const reString = `drupal\.redis\.[.\d\w]+:([\w]+):(.*)`
@@ -18,7 +28,7 @@ const reString = `drupal\.redis\.[.\d\w]+:([\w]+):(.*)`
 var re = regexp.MustCompile(reString)
 
 /*
-BinStats holds stats for a single Drupal cache bin.
+BinStats holds Stats for a single Drupal cache bin.
 */
 type BinStats struct {
 	Keys uint // Redis only supports 2^32 keys anyway.
@@ -37,29 +47,52 @@ func (bs *BinStats) addEntry(c redis.Conn, key string) {
 	bs.Size += val
 }
 
+/*
+CacheStats represents the discovered information about Drupal cache data held in
+a Redis database.
+ */
 type CacheStats struct {
-	memoryUsed    uint64
-	memoryPeak    uint64
-	drupalVersion string
-	drupalPrefix  string
-	itemCount     uint32 // Redis hardcoded limit.
-	stats         map[string]BinStats
+	//TODO implement these fields.
+	//memoryUsed    uint64
+	//memoryPeak    uint64
+	//drupalVersion string
+	//drupalPrefix  string
+	ItemCount     uint32 // Redis hardcoded limit.
+	Stats         map[string]BinStats
 }
 
 func main() {
+	dsn := flag.String("dsn", "redis://localhost:6379", "Redis DSN - the port is optional.")
+	jsonOutput := flag.Bool("json", false, "Use JSON output.")
+	quiet := flag.Bool("q", false, "Do not display scan progress")
+	flag.Parse()
 	// Connect to the server (ex: DB #1, default #0).
-	const dsn = "redis://localhost/"
-	c, err := redis.DialURL(dsn, redis.DialDatabase(0))
+	c, err := redis.DialURL(*dsn, redis.DialDatabase(0))
 	if err != nil {
 		panic(err)
 	}
 	defer c.Close()
 
+	var logDest io.Writer
+	if *quiet {
+		logDest = ioutil.Discard
+	} else {
+		logDest = os.Stderr
+	}
 	var stats CacheStats
-	if err = stats.Scan(c, 0, os.Stderr); err != nil {
+	if err = stats.Scan(c, 0, logDest); err != nil {
 		panic(err)
 	}
-	printStats(os.Stdout, &stats)
+
+	if *jsonOutput {
+		j, err := json.Marshal(stats)
+		if err != nil {
+			panic(err)
+		}
+		fmt.Printf("%s\n", j)
+	} else {
+		printStats(os.Stdout, &stats)
+	}
 }
 
 /*
@@ -70,16 +103,16 @@ Scan examines the active database for keys matching the Drupal cache bin format.
   - writer is a logging output (think os.Stderr), not the main output.
 */
 func (cs *CacheStats) Scan(c redis.Conn, maxPasses uint32, w io.Writer) error {
-	if cs.stats == nil {
-		cs.stats = map[string]BinStats{}
+	if cs.Stats == nil {
+		cs.Stats = map[string]BinStats{}
 	}
 
 	dbSize, err := redis.Uint64(c.Do("DBSIZE"))
 	if err != nil {
 		return err
 	}
-	cs.itemCount = uint32(dbSize) // Cannot be >= 2^32 in Redis anyway.
-	pb := makeProgressBar(80, cs.itemCount)
+	cs.ItemCount = uint32(dbSize) // Cannot be >= 2^32 in Redis anyway.
+	pb := progress.MakeProgressBar(80, cs.ItemCount)
 	var passes uint32 // The number of performed SCAN passes.
 	var seen float64
 	var iterator int  // Type chosen by Redigo
@@ -109,7 +142,7 @@ func (cs *CacheStats) Scan(c redis.Conn, maxPasses uint32, w io.Writer) error {
 	return nil
 }
 
-// indexKeys assumes cs.stats is already initialized to a non-nil value.
+// indexKeys assumes cs.Stats is already initialized to a non-nil value.
 func (cs *CacheStats) indexKeys(c redis.Conn, keys []string) error {
 	for _, key := range keys {
 		sl := re.FindStringSubmatch(key)
@@ -117,12 +150,12 @@ func (cs *CacheStats) indexKeys(c redis.Conn, keys []string) error {
 			return fmt.Errorf("unexpected non-matching key: %s", key)
 		}
 		bin := sl[1]
-		if _, ok := cs.stats[bin]; !ok {
-			cs.stats[bin] = BinStats{}
+		if _, ok := cs.Stats[bin]; !ok {
+			cs.Stats[bin] = BinStats{}
 		}
-		binStats := cs.stats[bin]
+		binStats := cs.Stats[bin]
 		binStats.addEntry(c, key)
-		cs.stats[bin] = binStats
+		cs.Stats[bin] = binStats
 	}
 	return nil
 }
@@ -134,10 +167,10 @@ func printStats(w io.Writer, cs *CacheStats) {
 	sizeMax := 0.0
 	var totalCount uint
 	var totalSize int64
-	for bin := range cs.stats {
+	for bin := range cs.Stats {
 		bins = append(bins, bin)
-		keysWidth := math.Ceil(math.Log10(float64(cs.stats[bin].Keys)))
-		sizeWidth := math.Ceil(math.Log10(float64(cs.stats[bin].Size)))
+		keysWidth := math.Ceil(math.Log10(float64(cs.Stats[bin].Keys)))
+		sizeWidth := math.Ceil(math.Log10(float64(cs.Stats[bin].Size)))
 
 		if keysWidth > countMax {
 			countMax = keysWidth
@@ -166,11 +199,11 @@ func printStats(w io.Writer, cs *CacheStats) {
 		"-+-" + strings.Repeat("-", intSizeMax))
 	_, _ = fmt.Fprintln(w, hr)
 	for _, bin := range bins {
-		totalCount += cs.stats[bin].Keys
-		totalSize += cs.stats[bin].Size
+		totalCount += cs.Stats[bin].Keys
+		totalSize += cs.Stats[bin].Size
 		_, _ = fmt.Fprintf(w, format, bin,
-			strconv.FormatUint(uint64(cs.stats[bin].Keys), 10),
-			strconv.FormatUint(uint64(cs.stats[bin].Size), 10))
+			strconv.FormatUint(uint64(cs.Stats[bin].Keys), 10),
+			strconv.FormatUint(uint64(cs.Stats[bin].Size), 10))
 	}
 	_, _ = fmt.Fprintln(w, hr)
 	_, _ = fmt.Fprintf(w, format, "Total",
