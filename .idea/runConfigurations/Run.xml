@@ -2,7 +2,7 @@
   <configuration default="false" name="Run" type="GoApplicationRunConfiguration" factoryName="Go Application">
     <module name="drupal_redis_stats" />
     <working_directory value="$PROJECT_DIR$" />
-    <go_parameters value="-o cache" />
+    <go_parameters value="-i -o cache" />
     <EXTENSION ID="net.ashald.envfile">
       <option name="IS_ENABLED" value="false" />
       <option name="IS_SUBST" value="false" />
