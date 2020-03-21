@@ -2,3 +2,7 @@
 .idea/workspace.xml
 cache
 drupal_redis_stats
+
+# Generated files
+Test
+c.out

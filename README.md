@@ -1,6 +1,8 @@
 Drupal Redis Stats
 ==================
 
+[![Build Status](https://travis-ci.org/fgm/drupal_redis_stats.svg?branch=master)](https://travis-ci.org/fgm/drupal_redis_stats)
+[![Test Coverage](https://api.codeclimate.com/v1/badges/270be4d8262469d3949c/test_coverage)](https://codeclimate.com/github/fgm/drupal_redis_stats/test_coverage)
 [![Maintainability](https://api.codeclimate.com/v1/badges/270be4d8262469d3949c/maintainability)](https://codeclimate.com/github/fgm/drupal_redis_stats/maintainability)
 [![FOSSA Status](https://app.fossa.com/api/projects/custom%2B11916%2Fgithub.com%2Ffgm%2Fdrupal_redis_stats.svg?type=shield)](https://app.fossa.com/projects/custom%2B11916%2Fgithub.com%2Ffgm%2Fdrupal_redis_stats?ref=badge_shield)
 

@@ -45,7 +45,7 @@ func main() {
 	}
 
 	if *jsonOutput {
-		output.JSON(os.Stderr, &stats)
+		_ = output.JSON(os.Stderr, &stats)
 	} else {
 		output.Text(os.Stdout, &stats)
 	}

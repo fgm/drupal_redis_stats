@@ -5,6 +5,7 @@ package output
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -17,12 +18,11 @@ import (
 /*
 JSON outputs statistics in JSON format for API usage.
 */
-func JSON(w io.Writer, stats *stats.CacheStats) {
-	j, err := json.Marshal(stats)
-	if err != nil {
-		panic(err)
-	}
+func JSON(w io.Writer, stats *stats.CacheStats) error {
+	// The CacheStats type cannot fail serialization.
+	j, _ := json.Marshal(stats)
 	fmt.Fprintf(w, "%s\n", j)
+	return nil
 }
 
 type templateData struct {
@@ -36,14 +36,18 @@ type templateData struct {
 Text outputs statistics in text format for CLI usage.
 */
 func Text(w io.Writer, cs *stats.CacheStats) {
-	name := "stats.go.gotext"
+	if cs == nil {
+		panic(errors.New("unexpected nil stats"))
+	}
+	const pkg = "output"
+	const name = "stats.go.gotext"
 	t := template.New(name)
 	t.Funcs(template.FuncMap{
 		"repeat": strings.Repeat,
 	})
 	template.Must(t.ParseFiles(
-		"output/"+name,
-		"output/hr.go.gotext",
+		pkg+"/"+name,
+		pkg+"/hr.go.gotext",
 	))
 
 	const binsHeader = "Bin"
@@ -63,6 +67,7 @@ func Text(w io.Writer, cs *stats.CacheStats) {
 
 	err := t.Execute(w, data)
 	if err != nil {
+		// No failure expected for any data, so let's panic.
 		panic(err)
 	}
 }
