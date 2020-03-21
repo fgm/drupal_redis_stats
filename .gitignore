@@ -1,3 +1,4 @@
 .idea/$CACHE_FILE$
 .idea/workspace.xml
-/cache
+cache
+drupal_redis_stats

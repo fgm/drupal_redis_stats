@@ -1,4 +1,4 @@
-module code.osinet.fr/fgm/drupal_redis_stats
+module github.com/fgm/drupal_redis_stats
 
 go 1.14
 

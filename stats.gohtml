@@ -1,0 +1,36 @@
+{{- /*gotype: code.osinet.fr/fgm/drupal_redis_stats.CacheStats*/ -}}
+{{/* First, adjust column widths for labels and data within */}}
+{{- $bl := "Bin" -}}
+{{- $bfoot := "Total" -}}
+{{- $bw := .MaxBinNameLength -}}
+{{- if gt (len $bfoot) $bw -}}
+    {{- $bw = len $bfoot -}}
+{{- end -}}
+
+{{- $kl := "Entries" -}}
+{{- $kw := .TotalKeysLength -}}
+{{- if gt (len $kl) $kw -}}
+    {{- $kw = len $kl -}}
+{{- end -}}
+
+{{- $sl := "Size" -}}
+{{- $sw := .TotalSizeLength -}}
+{{- if gt (len $sl) $sw -}}
+    {{- $sw = len $sl -}}
+{{- end -}}
+
+{{/* Now prepare the format strings */}}
+{{- $bf := printf "%%-%ds" $bw -}}
+{{- $khf := printf "%%%ds" $kw -}}
+{{- $kdf := printf "%%%dd" $kw -}}
+{{- $shf := printf "%%%ds" $sw -}}
+{{- $sdf := printf "%%%dd" $sw -}}
+
+{{/* We can now emit the table */}}
+{{ printf $bf $bl }} | {{ printf $khf $kl }} | {{ printf $shf $sl }}
+{{ repeat "-" $bw }}-+-{{ repeat "-" $kw }}-+-{{ repeat "-" $sw -}}
+{{ range $k, $v := .Stats }}
+{{ printf $bf $k }} | {{ printf $kdf $v.Keys }} | {{ printf $sdf $v.Size -}}
+{{ end }}
+{{ repeat "-" $bw }}-+-{{ repeat "-" $kw }}-+-{{ repeat "-" $sw }}
+{{ printf $bf $bfoot }} | {{ printf $kdf .TotalKeys }} | {{ printf $sdf .TotalSize }}

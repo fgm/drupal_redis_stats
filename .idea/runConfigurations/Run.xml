@@ -15,7 +15,7 @@
     </EXTENSION>
     <kind value="PACKAGE" />
     <filePath value="$PROJECT_DIR$/drupal_redis_stats.go" />
-    <package value="code.osinet.fr/fgm/drupal_redis_stats" />
+    <package value="github.com/fgm/drupal_redis_stats" />
     <directory value="$PROJECT_DIR$/" />
     <output_directory value="$PROJECT_DIR$" />
     <method v="2" />

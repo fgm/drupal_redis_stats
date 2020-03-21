@@ -1,11 +1,13 @@
 Drupal Redis Stats
 ==================
 
+[![Maintainability](https://api.codeclimate.com/v1/badges/270be4d8262469d3949c/maintainability)](https://codeclimate.com/github/fgm/drupal_redis_stats/maintainability)
+[![FOSSA Status](https://app.fossa.com/api/projects/custom%2B11916%2Fgithub.com%2Ffgm%2Fdrupal_redis_stats.svg?type=shield)](https://app.fossa.com/projects/custom%2B11916%2Fgithub.com%2Ffgm%2Fdrupal_redis_stats?ref=badge_shield)
+
 This command provides a summary of the use of a Redis database by the 
 Drupal 8 cache provider.
 
 It relies on Redis `SCAN` operator.
-
 
 ## Installing
 

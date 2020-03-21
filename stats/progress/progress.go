@@ -32,6 +32,9 @@ func (pb Bar) Remove() aec.ANSI {
 Render return the progress bar at the current progression status.
  */
 func (pb *Bar) Render(current float64) string {
+	if pb.max == 0 {
+		return aec.Up(1).String()
+	}
 	ratio := int(math.Round(float64((pb.width-2)*pb.max) / float64(pb.max)))
 	res := fmt.Sprintf("[%s%s %d/%d%s\n",
 		pb.bar.Apply(strings.Repeat("=", ratio)),
