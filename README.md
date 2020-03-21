@@ -22,7 +22,7 @@ go get -u github.com/fgm/drupal_redis_stats
 ### Flags
 
 - `-h` provides help
-- `-dsn redis://<host>:<port>` flag allows using a non-default Redis
+- `-dsn redis://<host>:<port>/<db>` flag allows using a non-default Redis
 - `-json` provides JSON output instead of the default human-readable format
 - `-q` disables the progress bar used during the database SCAN loop
 

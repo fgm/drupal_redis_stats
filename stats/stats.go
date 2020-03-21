@@ -1,6 +1,6 @@
 /*
 Package stats extracts Drupal 8 cache information from a Redis database.
- */
+*/
 package stats
 
 import (
@@ -18,7 +18,7 @@ import (
 BinStats holds Stats for a single Drupal cache bin.
 */
 type BinStats struct {
-	Keys uint // Redis only supports 2^32 keys anyway.
+	Keys uint32 // Redis only supports 2^32 keys anyway.
 	Size int64
 }
 
@@ -39,12 +39,13 @@ CacheStats represents the discovered information about Drupal cache data held in
 a Redis database.
 */
 type CacheStats struct {
-	//TODO implement these fields.
+	//TODO #1 implement these fields.
 	//memoryUsed    uint64
 	//memoryPeak    uint64
 	//drupalVersion string
+	//TODO #2
 	//drupalPrefix  string
-	ItemCount uint32 // Redis hardcoded limit.
+	TotalKeys uint32 // Redis hardcoded limit.
 	Stats     map[string]BinStats
 }
 
@@ -100,8 +101,8 @@ func (cs *CacheStats) Scan(c redis.Conn, maxPasses uint32, w io.Writer) error {
 	if err != nil {
 		return err
 	}
-	cs.ItemCount = uint32(dbSize) // Cannot be >= 2^32 in Redis anyway.
-	pb := progress.MakeProgressBar(80, cs.ItemCount)
+	cs.TotalKeys = uint32(dbSize) // Cannot be >= 2^32 in Redis anyway.
+	pb := progress.MakeProgressBar(80, cs.TotalKeys)
 	var passes uint32 // The number of performed SCAN passes.
 	var seen float64
 	var iterator int  // Type chosen by Redigo
@@ -132,23 +133,12 @@ func (cs *CacheStats) Scan(c redis.Conn, maxPasses uint32, w io.Writer) error {
 }
 
 /*
-TotalKeys returns the total entries used by the cache.
-*/
-func (cs CacheStats) TotalKeys() uint64 {
-	var keySum uint
-	for _, v := range cs.Stats {
-		keySum += v.Keys
-	}
-	return uint64(keySum)
-}
-
-/*
-TotalKeysLength returns the length in runes of the total number of keys.
+ItemCountLength returns the length in runes of the total number of keys.
 
 Since this is the sum of all bins, it is at least as large as any per-bin info.
 */
-func (cs CacheStats) TotalKeysLength() uint {
-	return uint(len(strconv.FormatUint(cs.TotalKeys(), 10)))
+func (cs CacheStats) ItemCountLength() uint {
+	return uint(len(strconv.FormatUint(uint64(cs.TotalKeys), 10)))
 }
 
 /*

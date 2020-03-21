@@ -1,0 +1,16 @@
+{{- /*gotype: github.com/fgm/drupal_redis_stats/output.templateData*/ -}}
+{{- /* Prepare the format strings */ -}}
+{{- $bf := printf "%%-%ds" .BinsLen -}}
+{{- $khf := printf "%%%ds" .KeysLen -}}
+{{- $kdf := printf "%%%dd" .KeysLen -}}
+{{- $shf := printf "%%%ds" .SizeLen -}}
+{{- $sdf := printf "%%%dd" .SizeLen -}}
+
+{{- /* We can now emit the table */ -}}
+{{ printf $bf .BinsHeader }} | {{ printf $khf .KeysHeader }} | {{ printf $shf .SizeHeader }}
+{{ template "hr.go.gotext" . -}}
+{{ range $k, $v := .Stats.Stats }}
+{{ printf $bf $k }} | {{ printf $kdf $v.Keys }} | {{ printf $sdf $v.Size -}}
+{{ end }}
+{{ template "hr.go.gotext" . }}
+{{ printf $bf .BinsFooter }} | {{ printf $kdf .Stats.TotalKeys }} | {{ printf $sdf .Stats.TotalSize }}

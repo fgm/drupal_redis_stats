@@ -1,0 +1,2 @@
+{{- /*gotype: github.com/fgm/drupal_redis_stats/output.templateData*/ -}}
+{{ repeat "-" .BinsLen }}-+-{{ repeat "-" .KeysLen }}-+-{{ repeat "-" .SizeLen -}}
