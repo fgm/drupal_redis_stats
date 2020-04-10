@@ -1,6 +1,6 @@
 /*
 Package progress implements a simple progress bar.
- */
+*/
 package progress
 
 import (
@@ -13,7 +13,7 @@ import (
 
 /*
 Bar holds the configuration needed to generate a progress bar.
- */
+*/
 type Bar struct {
 	bar   aec.ANSI
 	max   uint
@@ -23,14 +23,14 @@ type Bar struct {
 
 /*
 Remove erases the progress bar from the line where it was displayed.
- */
+*/
 func (pb Bar) Remove() aec.ANSI {
 	return aec.EraseLine(aec.EraseModes.All)
 }
 
 /*
 Render return the progress bar at the current progression status.
- */
+*/
 func (pb *Bar) Render(current float64) string {
 	if pb.max == 0 {
 		return aec.Up(1).String()
@@ -51,7 +51,7 @@ MakeProgressBar creates a progress bar.
 
   - width is the maximum number of progress steps;
   - max is the value for which the bar displays as full.
- */
+*/
 func MakeProgressBar(width uint, max uint32) Bar {
 	pb := Bar{
 		bar:   aec.Color8BitF(aec.NewRGB8Bit(255, 96, 51)),
@@ -61,4 +61,3 @@ func MakeProgressBar(width uint, max uint32) Bar {
 	}
 	return pb
 }
-

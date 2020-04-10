@@ -8,9 +8,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"math"
 	"strings"
 	"text/template"
+
+	"github.com/markbates/pkger"
 
 	"github.com/fgm/drupal_redis_stats/stats"
 )
@@ -33,22 +36,44 @@ type templateData struct {
 }
 
 /*
+compileTemplates loads and parses the template, either from the file system in
+development mode, or from the embedded version in production mode.
+*/
+func compileTemplates() (*template.Template, error) {
+	tpl := template.New("")
+	tpl.Funcs(template.FuncMap{
+		"repeat": strings.Repeat,
+	})
+
+	// Manual names instead of loop to allow pkger discovery within a non-dedicated directory.
+	hr, err := pkger.Open("/output/hr.go.gotext")
+	if err != nil {
+		return nil, fmt.Errorf("failed opening hr template: %w", err)
+	}
+	sl, _ := ioutil.ReadAll(hr)
+	if _, err = tpl.Parse(string(sl)); err != nil {
+		return nil, fmt.Errorf("failed parsing hr template: %w", err)
+	}
+
+	stats, err := pkger.Open("/output/stats.go.gotext")
+	if err != nil {
+		return nil, fmt.Errorf("failed opening stats template: %w", err)
+	}
+	sl, _ = ioutil.ReadAll(stats)
+	if _, err = tpl.Parse(string(sl)); err != nil {
+		return nil, fmt.Errorf("failed parsing stats template: %w", err)
+	}
+	return tpl, nil
+}
+
+/*
 Text outputs statistics in text format for CLI usage.
 */
 func Text(w io.Writer, cs *stats.CacheStats) {
 	if cs == nil {
 		panic(errors.New("unexpected nil stats"))
 	}
-	const pkg = "output"
-	const name = "stats.go.gotext"
-	t := template.New(name)
-	t.Funcs(template.FuncMap{
-		"repeat": strings.Repeat,
-	})
-	template.Must(t.ParseFiles(
-		pkg+"/"+name,
-		pkg+"/hr.go.gotext",
-	))
+	tpl, _ := compileTemplates()
 
 	const binsHeader = "Bin"
 	const keysHeader = "Keys"
@@ -65,7 +90,7 @@ func Text(w io.Writer, cs *stats.CacheStats) {
 		SizeLen:    int(math.Max(float64(cs.TotalSizeLength()), float64(len(sizeHeader)))),
 	}
 
-	err := t.Execute(w, data)
+	err := tpl.Execute(w, data)
 	if err != nil {
 		// No failure expected for any data, so let's panic.
 		panic(err)
