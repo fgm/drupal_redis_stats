@@ -94,6 +94,15 @@ func TestText(t *testing.T) {
 	}
 }
 
+func BenchmarkText(b *testing.B) {
+	w := strings.Builder{}
+	var s = &sampleStats
+	for n := 0; n < b.N; n++ {
+		Text(&w, s)
+		w.Reset()
+	}
+}
+
 func init() {
 	// Filename will be the absolute path to this very file, however the test is run.
 	// Credit: https://brandur.org/fragments/testing-go-project-root

@@ -51,7 +51,7 @@ type CacheStats struct {
 
 // indexKeys assumes cs.Stats is already initialized to a non-nil value.
 func (cs *CacheStats) indexKeys(c redis.Conn, keys []string) error {
-	const reString = `drupal\.redis\.[.\d\w]+:([\w]+):(.*)`
+	const reString = `drupal\.redis\.[-.\d\w]+:([\w]+):(.*)`
 
 	var re = regexp.MustCompile(reString)
 
