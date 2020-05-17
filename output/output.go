@@ -40,28 +40,25 @@ compileTemplates loads and parses the template, either from the file system in
 development mode, or from the embedded version in production mode.
 */
 func compileTemplates() (*template.Template, error) {
+	templateDir := pkger.Include("/output/templates")
+
 	tpl := template.New("")
 	tpl.Funcs(template.FuncMap{
 		"repeat": strings.Repeat,
 	})
 
-	// Manual names instead of loop to allow pkger discovery within a non-dedicated directory.
-	hr, err := pkger.Open("/output/hr.go.gotext")
-	if err != nil {
-		return nil, fmt.Errorf("failed opening hr template: %w", err)
-	}
-	sl, _ := ioutil.ReadAll(hr)
-	if _, err = tpl.Parse(string(sl)); err != nil {
-		return nil, fmt.Errorf("failed parsing hr template: %w", err)
-	}
-
-	stats, err := pkger.Open("/output/stats.go.gotext")
-	if err != nil {
-		return nil, fmt.Errorf("failed opening stats template: %w", err)
-	}
-	sl, _ = ioutil.ReadAll(stats)
-	if _, err = tpl.Parse(string(sl)); err != nil {
-		return nil, fmt.Errorf("failed parsing stats template: %w", err)
+	for _, name := range []string{"hr", "stats"} {
+		resource, err := pkger.Open(strings.Join([]string{
+			templateDir,
+			name + ".go.gotext",
+		}, "/"))
+		if err != nil {
+			return nil, fmt.Errorf("failed opening %s template: %w", name, err)
+		}
+		contents, _ := ioutil.ReadAll(resource)
+		if _, err = tpl.Parse(string(contents)); err != nil {
+			return nil, fmt.Errorf("failed parsing %s template: %w", name, err)
+		}
 	}
 	return tpl, nil
 }
