@@ -1,4 +1,4 @@
-package output
+package output_test
 
 import (
 	"os"
@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/fgm/drupal_redis_stats/output"
 	"github.com/fgm/drupal_redis_stats/stats"
 )
 
@@ -40,7 +41,7 @@ func TestJSON(t *testing.T) {
 	w := strings.Builder{}
 	var s *stats.CacheStats
 
-	err := JSON(&w, s)
+	err := output.JSON(&w, s)
 	if err != nil {
 		t.Errorf("nil stats should not fail serialization")
 	}
@@ -50,7 +51,7 @@ func TestJSON(t *testing.T) {
 	}
 
 	s = &sampleStats
-	err = JSON(&w, s)
+	err = output.JSON(&w, s)
 	if err != nil {
 		t.Errorf("non-nil stats should pass serialization")
 	}
@@ -73,7 +74,7 @@ func TestTextSadNil(t *testing.T) {
 				r = true
 			}
 		}()
-		Text(&w, s)
+		output.Text(&w, s)
 		return r
 	}
 	if !recovered() {
@@ -81,10 +82,19 @@ func TestTextSadNil(t *testing.T) {
 	}
 }
 
+func TestTextSadWriter(t *testing.T) {
+	defer func() {
+		if err := recover(); err == nil {
+			t.Error("calling Text() did not cause panic")
+		}
+	}()
+	output.Text(ErrorWriter(0), &stats.CacheStats{})
+}
+
 func TestText(t *testing.T) {
 	w := strings.Builder{}
 	var s = &sampleStats
-	Text(&w, s)
+	output.Text(&w, s)
 	actual := w.String()
 	for _, expectation := range sampleExpectations {
 		expected := strconv.Itoa(expectation.value)
@@ -98,7 +108,7 @@ func BenchmarkText(b *testing.B) {
 	w := strings.Builder{}
 	var s = &sampleStats
 	for n := 0; n < b.N; n++ {
-		Text(&w, s)
+		output.Text(&w, s)
 		w.Reset()
 	}
 }
