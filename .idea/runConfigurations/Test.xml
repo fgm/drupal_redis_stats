@@ -2,7 +2,6 @@
   <configuration default="false" name="Test" type="GoTestRunConfiguration" factoryName="Go Test" singleton="false">
     <module name="drupal_redis_stats" />
     <working_directory value="$PROJECT_DIR$/" />
-    <go_parameters value="-i" />
     <EXTENSION ID="net.ashald.envfile">
       <option name="IS_ENABLED" value="false" />
       <option name="IS_SUBST" value="false" />
@@ -13,11 +12,11 @@
         <ENTRY IS_ENABLED="true" PARSER="runconfig" />
       </ENTRIES>
     </EXTENSION>
-    <framework value="gotest" />
     <kind value="PACKAGE" />
     <package value="github.com/fgm/drupal_redis_stats/output" />
     <directory value="$PROJECT_DIR$/" />
     <filePath value="$PROJECT_DIR$/" />
+    <framework value="gotest" />
     <method v="2" />
   </configuration>
 </component>

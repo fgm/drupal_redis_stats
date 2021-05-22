@@ -3,17 +3,20 @@ Drupal Redis Stats
 
 [![Build Status](https://travis-ci.org/fgm/drupal_redis_stats.svg?branch=master)](https://travis-ci.org/fgm/drupal_redis_stats)
 [![Test Coverage](https://api.codeclimate.com/v1/badges/270be4d8262469d3949c/test_coverage)](https://codeclimate.com/github/fgm/drupal_redis_stats/test_coverage)
+[![Go Report Card](https://goreportcard.com/badge/github.com/fgm/drupal_redis_stats)](https://goreportcard.com/report/github.com/fgm/drupal_redis_stats)
 [![Maintainability](https://api.codeclimate.com/v1/badges/270be4d8262469d3949c/maintainability)](https://codeclimate.com/github/fgm/drupal_redis_stats/maintainability)
 [![FOSSA Status](https://app.fossa.com/api/projects/custom%2B11916%2Fgithub.com%2Ffgm%2Fdrupal_redis_stats.svg?type=shield)](https://app.fossa.com/projects/custom%2B11916%2Fgithub.com%2Ffgm%2Fdrupal_redis_stats?ref=badge_shield)
 
 This command provides a summary of the use of a Redis database by the 
-Drupal 8 cache provider.
+Drupal 8 or Drupal 9 cache provider.
 
-It relies on Redis `SCAN` operator.
+It relies on Redis `SCAN` operator instead of `KEYS`, so it won't block your
+site when used on production.
+
 
 ## Installing
 
-Assuming Go 1.14 or later installed:
+Assuming Go 1.16 or later installed:
 
 ```
 go get -u github.com/fgm/drupal_redis_stats
