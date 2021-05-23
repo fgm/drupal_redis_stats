@@ -19,7 +19,7 @@ import (
 	"github.com/fgm/drupal_redis_stats/stats"
 )
 
-func getLogDest(quiet bool) io.Writer {
+func getVerboseWriter(quiet bool) io.Writer {
 	if quiet {
 		return ioutil.Discard
 	}
@@ -59,10 +59,7 @@ func main() {
 	var err error
 	var quiet bool
 
-	logDest := getLogDest(quiet) // Log on os.Stderr before flag parsing.
 	fs := flag.NewFlagSet("cli", flag.ContinueOnError)
-	fs.SetOutput(logDest)
-
 	flagUser := fs.String("user", "", "user name if Redis is configured with ACL. Overrides the DSN user.")
 	flagPass := fs.String("pass", "", "Password. If it is empty it's asked from the tty. Overrides the DSN password.")
 	dsn := fs.String("dsn", "redis://localhost:6379/0", "Can include user and password, per https://www.iana.org/assignments/uri-schemes/prov/redis")
@@ -72,8 +69,7 @@ func main() {
 		log.Fatalf("failed parsing flags: %v", err)
 	}
 
-	logDest = getLogDest(quiet) // Update logger based on flags.
-	log.SetOutput(logDest)
+	verboseWriter := getVerboseWriter(quiet)
 
 	if user, pass, err = getCredentials(fs, os.Stdout, *dsn, *flagUser, *flagPass); err != nil {
 		log.Fatalf("failed obtaining user/pass: %v", err)
@@ -86,7 +82,7 @@ func main() {
 	defer c.Close()
 
 	var stats stats.CacheStats
-	if err = stats.Scan(c, 0, logDest); err != nil {
+	if err = stats.Scan(c, 0, verboseWriter); err != nil {
 		log.Fatalf("failed SCAN: %v", err)
 	}
 

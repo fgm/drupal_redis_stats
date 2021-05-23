@@ -36,7 +36,7 @@ func TestIsFlagPassed(t *testing.T) {
 	}
 }
 
-func TestGetLogDest(t *testing.T) {
+func TestGetVerboseWriter(t *testing.T) {
 	checks := [...]struct {
 		name         string
 		quiet        bool
@@ -47,7 +47,7 @@ func TestGetLogDest(t *testing.T) {
 	}
 	for _, check := range checks {
 		t.Run(check.name, func(t *testing.T) {
-			actual := getLogDest(check.quiet)
+			actual := getVerboseWriter(check.quiet)
 			actualType := fmt.Sprintf("%T", actual)
 			if actualType != check.expectedType {
 				t.Errorf("Expected %s, got %s", actualType, check.expectedType)

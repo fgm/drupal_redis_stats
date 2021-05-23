@@ -2,9 +2,8 @@ Drupal Redis Stats
 ==================
 
 [![Build Status](https://travis-ci.org/fgm/drupal_redis_stats.svg?branch=master)](https://travis-ci.org/fgm/drupal_redis_stats)
-[![Test Coverage](https://api.codeclimate.com/v1/badges/270be4d8262469d3949c/test_coverage)](https://codeclimate.com/github/fgm/drupal_redis_stats/test_coverage)
+[![codecov](https://codecov.io/gh/fgm/drupal_redis_stats/branch/master/graph/badge.svg?token=QR0XKBK3DF)](https://codecov.io/gh/fgm/drupal_redis_stats)
 [![Go Report Card](https://goreportcard.com/badge/github.com/fgm/drupal_redis_stats)](https://goreportcard.com/report/github.com/fgm/drupal_redis_stats)
-[![Maintainability](https://api.codeclimate.com/v1/badges/270be4d8262469d3949c/maintainability)](https://codeclimate.com/github/fgm/drupal_redis_stats/maintainability)
 [![FOSSA Status](https://app.fossa.com/api/projects/custom%2B11916%2Fgithub.com%2Ffgm%2Fdrupal_redis_stats.svg?type=shield)](https://app.fossa.com/projects/custom%2B11916%2Fgithub.com%2Ffgm%2Fdrupal_redis_stats?ref=badge_shield)
 
 This command provides a summary of the use of a Redis database by the 
@@ -27,9 +26,13 @@ go get -u github.com/fgm/drupal_redis_stats
 ### Flags
 
 - `-h` provides help
-- `-dsn redis://<host>:<port>/<db>` flag allows using a non-default Redis
+- `-dsn` flag allows using a non-default Redis
+  - `-dsn redis://<host>:<port>/<db>` without authentication
+  - `-dsn redis://<password>@<host>:<port>/<db>` for `requirepass` AUTH mode
+  - `-dsn redis://<user>:<password>@<host>:<port>/<db>` for ACL AUTH mode
 - `-json` provides JSON output instead of the default human-readable format
 - `-q` disables the progress bar used during the database SCAN loop
+
 
 ### Sample results
 
