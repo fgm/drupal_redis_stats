@@ -50,11 +50,14 @@ func compileTemplates() (*template.Template, error) {
 }
 
 // Text outputs statistics in text format for CLI usage.
-func Text(w io.Writer, cs *stats.CacheStats) {
+func Text(w io.Writer, cs *stats.CacheStats) error {
 	if cs == nil {
-		panic(errors.New("unexpected nil stats"))
+		return errors.New("unexpected nil stats")
 	}
-	tpl, _ := compileTemplates()
+	tpl, err := compileTemplates()
+	if err != nil {
+		return err
+	}
 
 	const binsHeader = "Bin"
 	const keysHeader = "Keys"
@@ -71,9 +74,9 @@ func Text(w io.Writer, cs *stats.CacheStats) {
 		SizeLen:    int(math.Max(float64(cs.TotalSizeLength()), float64(len(sizeHeader)))),
 	}
 
-	err := tpl.Execute(w, data)
+	err = tpl.Execute(w, data)
 	if err != nil {
-		// No failure expected for any data, so let's panic.
-		panic(err)
+		return err
 	}
+	return nil
 }
