@@ -2,7 +2,7 @@
 package output
 
 import (
-	_ "embed"
+	_ "embed" // Imported for templates embedding.
 	"encoding/json"
 	"errors"
 	"fmt"
