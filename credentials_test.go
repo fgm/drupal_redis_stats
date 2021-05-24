@@ -27,7 +27,7 @@ func TestGetPasswordFromCLI(t *testing.T) {
 		name     string
 		reader   PasswordReader
 		input    io.Reader
-		expValue string
+		expValue passValue
 		expError error
 	}{
 		{"test happy", readTestPassword(testPassword), f, testPassword, nil},
@@ -60,10 +60,11 @@ func TestGetPasswordFromCLI(t *testing.T) {
 }
 func TestGetCredentials(t *testing.T) {
 	checks := [...]struct {
-		name             string
-		args             []string
-		expUser, expPass string
-		expError         bool
+		name     string
+		args     []string
+		expUser  userValue
+		expPass  passValue
+		expError bool
 	}{
 		{"nothing, nil", nil, "", "", false},
 		{"bad dsn", []string{"-dsn", ":localhost/0"}, "", "", true},
@@ -104,7 +105,8 @@ func TestGetCredentials(t *testing.T) {
 
 type MockConn struct {
 	RequirePass bool
-	User, Pass  string
+	User        userValue
+	Pass        passValue
 }
 
 func (mc *MockConn) Close() error { return nil }
@@ -149,12 +151,14 @@ func (mc *MockConn) Receive() (reply interface{}, err error) { return nil, nil }
 
 func TestAuthenticate(t *testing.T) {
 	checks := [...]struct {
-		name             string
-		includeUser      bool
-		user, pass       string
-		requirePass      bool // redis.conf requirepass = true
-		aclUser, aclPass string
-		expErr           bool
+		name        string
+		includeUser bool
+		user        userValue
+		pass        passValue
+		requirePass bool // redis.conf requirepass = true
+		aclUser     userValue
+		aclPass     passValue
+		expErr      bool
 	}{
 		{"requirepass, only pass", false, "", "pass", true, "", "pass", false},
 		{"requirepass, no pass", false, "", "", true, "", "pass", true},

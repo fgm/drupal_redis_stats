@@ -39,7 +39,7 @@ func TestIsFlagPassed(t *testing.T) {
 func TestGetVerboseWriter(t *testing.T) {
 	checks := [...]struct {
 		name         string
-		quiet        bool
+		quiet        quietValue
 		expectedType string
 	}{
 		{"true", true, "io.discard"},

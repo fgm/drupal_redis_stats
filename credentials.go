@@ -9,10 +9,11 @@ import (
 	"os"
 	"unicode/utf8"
 
-	"github.com/gomodule/redigo/redis"
 	"golang.org/x/term"
 )
 
+// PasswordReader abstracts the term.ReadPassword function, to allow switching
+// it for a version not depending on termios during tests.
 type PasswordReader interface {
 	ReadPassword(int) ([]byte, error)
 }
@@ -23,10 +24,11 @@ func (prf passwordReaderFunc) ReadPassword(fd int) ([]byte, error) {
 	return prf(fd)
 }
 
+// ErrInvalidUTF8 is raised when a string is not valid.
 var ErrInvalidUTF8 = errors.New("input was not a valid UTF-8 string")
 
-func getPasswordFromCLI(w io.Writer, pr PasswordReader, fd int) (string, error) {
-	fmt.Fprint(w, "Password: ")
+func getPasswordFromCLI(w io.Writer, pr PasswordReader, fd int) (passValue, error) {
+	_, _ = fmt.Fprint(w, "Password: ")
 	pBytes, err := pr.ReadPassword(fd)
 	if err != nil {
 		return "", fmt.Errorf("failed acquiring password from terminal without echo: %w", err)
@@ -34,7 +36,7 @@ func getPasswordFromCLI(w io.Writer, pr PasswordReader, fd int) (string, error) 
 	if !utf8.Valid(pBytes) {
 		return "", fmt.Errorf("invalid password: %w", ErrInvalidUTF8)
 	}
-	return string(pBytes), nil
+	return passValue(pBytes), nil
 }
 
 // getCredentials combines the user and pass values with those possibly
@@ -42,8 +44,8 @@ func getPasswordFromCLI(w io.Writer, pr PasswordReader, fd int) (string, error) 
 // terminal in echo-less mode.
 //
 // Explicit user/pass flags override those found in the DSN.
-func getCredentials(fs *flag.FlagSet, w io.Writer, flagDSN, flagUser, flagPass string) (user, pass string, err error) {
-	user, pass = flagUser, flagPass
+func getCredentials(fs *flag.FlagSet, w io.Writer, flagDSN, flagUser, flagPass string) (user userValue, pass passValue, err error) {
+	user, pass = userValue(flagUser), passValue(flagPass)
 
 	hasDSNFlag := isFlagPassed(fs, "dsn")
 	hasUserFlag := isFlagPassed(fs, "user")
@@ -57,15 +59,15 @@ func getCredentials(fs *flag.FlagSet, w io.Writer, flagDSN, flagUser, flagPass s
 			return "", "", fmt.Errorf("failed parsing Redis DSN: %v", err)
 		}
 		if !hasUserFlag {
-			user = u.User.Username()
+			user = userValue(u.User.Username())
 		}
 		if !hasPassFlag {
 			dsnPass, DSNContainsPass := u.User.Password()
 			if DSNContainsPass {
-				pass = dsnPass
+				pass = passValue(dsnPass)
 			} else {
 				// Redis URL parsing accepts single auth element as password, not user
-				pass = user
+				pass = passValue(user)
 				user = ""
 			}
 		}
@@ -78,18 +80,4 @@ func getCredentials(fs *flag.FlagSet, w io.Writer, flagDSN, flagUser, flagPass s
 		}
 	}
 	return
-}
-
-func authenticate(c redis.Conn, includeUser bool, user, pass string) error {
-	var err error
-	if includeUser {
-		_, err = c.Do("AUTH", user, pass)
-	} else {
-		_, err = c.Do("AUTH", pass)
-	}
-	if err != nil {
-		return fmt.Errorf("failed AUTH: %w", err)
-	}
-
-	return nil
 }

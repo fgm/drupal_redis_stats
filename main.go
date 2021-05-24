@@ -13,13 +13,11 @@ import (
 	"log"
 	"os"
 
-	"github.com/gomodule/redigo/redis"
-
 	"github.com/fgm/drupal_redis_stats/output"
 	"github.com/fgm/drupal_redis_stats/stats"
 )
 
-func getVerboseWriter(quiet bool) io.Writer {
+func getVerboseWriter(quiet quietValue) io.Writer {
 	if quiet {
 		return ioutil.Discard
 	}
@@ -36,46 +34,42 @@ func isFlagPassed(fs *flag.FlagSet, name string) bool {
 	return found
 }
 
-// open the Redis connection and authenticate is needed.
-func open(dsn *string, user string, pass string, fs *flag.FlagSet) (redis.Conn, error) {
-	var c redis.Conn
-	var err error
+type (
+	dsnValue   string
+	jsonValue  bool
+	passValue  string
+	quietValue bool
+	userValue  string
+)
 
-	// Connect to the server (ex: DB #1, default #0).
-	if c, err = redis.DialURL(*dsn); err != nil {
-		return nil, fmt.Errorf("failed dialing Redis URL: %w", err)
+func configure(args []string) (*flag.FlagSet, dsnValue, userValue, passValue, jsonValue, quietValue, error) {
+	fs := flag.NewFlagSet("cli", flag.ContinueOnError)
+	flagDSN := fs.String("dsn", "redis://localhost:6379/0", "Can include user and password, per https://www.iana.org/assignments/uri-schemes/prov/redis")
+	flagUser := fs.String("user", "", "user name if Redis is configured with ACL. Overrides the DSN user.")
+	flagPass := fs.String("pass", "", "Password. If it is empty it's asked from the tty. Overrides the DSN password.")
+	jsonOutput := fs.Bool("json", false, "Use JSON output.")
+	quiet := fs.Bool("q", false, "Do not display scan progress")
+	if err := fs.Parse(args); err != nil {
+		log.Fatalf("failed parsing flags: %v", err)
 	}
 
-	if user != "" || pass != "" {
-		if err = authenticate(c, isFlagPassed(fs, "user"), user, pass); err != nil {
-			return nil, err
-		}
+	user, pass, err := getCredentials(fs, os.Stdout, *flagDSN, *flagUser, *flagPass)
+	if err != nil {
+		return nil, "", "", "", false, false, fmt.Errorf("failed obtaining user/pass: %v", err)
 	}
-	return c, err
+
+	return fs, dsnValue(*flagDSN), user, pass, jsonValue(*jsonOutput), quietValue(*quiet), nil
 }
 
 func main() {
-	var user, pass string
-	var err error
-	var quiet bool
-
-	fs := flag.NewFlagSet("cli", flag.ContinueOnError)
-	flagUser := fs.String("user", "", "user name if Redis is configured with ACL. Overrides the DSN user.")
-	flagPass := fs.String("pass", "", "Password. If it is empty it's asked from the tty. Overrides the DSN password.")
-	dsn := fs.String("dsn", "redis://localhost:6379/0", "Can include user and password, per https://www.iana.org/assignments/uri-schemes/prov/redis")
-	jsonOutput := fs.Bool("json", false, "Use JSON output.")
-	fs.BoolVar(&quiet, "q", false, "Do not display scan progress")
-	if err := fs.Parse(os.Args[1:]); err != nil {
-		log.Fatalf("failed parsing flags: %v", err)
+	fs, dsn, user, pass, jsonOutput, quiet, err := configure(os.Args[1:])
+	if err != nil {
+		log.Fatalf("failed configuring: %v", err)
 	}
 
 	verboseWriter := getVerboseWriter(quiet)
 
-	if user, pass, err = getCredentials(fs, os.Stdout, *dsn, *flagUser, *flagPass); err != nil {
-		log.Fatalf("failed obtaining user/pass: %v", err)
-	}
-
-	c, err := open(dsn, user, pass, fs)
+	c, err := wireAuthConn(fs, dsn, user, pass)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -86,7 +80,7 @@ func main() {
 		log.Fatalf("failed SCAN: %v", err)
 	}
 
-	if *jsonOutput {
+	if jsonOutput {
 		_ = output.JSON(os.Stderr, &stats)
 	} else {
 		output.Text(os.Stdout, &stats)
