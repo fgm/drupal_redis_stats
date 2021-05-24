@@ -1,15 +1,17 @@
-package main
+package cmd
 
 import (
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"net/url"
 	"os"
 	"unicode/utf8"
 
+	"github.com/spf13/pflag"
 	"golang.org/x/term"
+
+	"github.com/fgm/drupal_redis_stats/redis"
 )
 
 // PasswordReader abstracts the term.ReadPassword function, to allow switching
@@ -27,7 +29,7 @@ func (prf passwordReaderFunc) ReadPassword(fd int) ([]byte, error) {
 // ErrInvalidUTF8 is raised when a string is not valid.
 var ErrInvalidUTF8 = errors.New("input was not a valid UTF-8 string")
 
-func getPasswordFromCLI(w io.Writer, pr PasswordReader, fd int) (passValue, error) {
+func getPasswordFromCLI(w io.Writer, pr PasswordReader, fd int) (redis.PassValue, error) {
 	_, _ = fmt.Fprint(w, "Password: ")
 	pBytes, err := pr.ReadPassword(fd)
 	if err != nil {
@@ -36,7 +38,7 @@ func getPasswordFromCLI(w io.Writer, pr PasswordReader, fd int) (passValue, erro
 	if !utf8.Valid(pBytes) {
 		return "", fmt.Errorf("invalid password: %w", ErrInvalidUTF8)
 	}
-	return passValue(pBytes), nil
+	return redis.PassValue(pBytes), nil
 }
 
 // getCredentials combines the user and pass values with those possibly
@@ -44,40 +46,44 @@ func getPasswordFromCLI(w io.Writer, pr PasswordReader, fd int) (passValue, erro
 // terminal in echo-less mode.
 //
 // Explicit user/pass flags override those found in the DSN.
-func getCredentials(fs *flag.FlagSet, w io.Writer, flagDSN, flagUser, flagPass string) (user userValue, pass passValue, err error) {
-	user, pass = userValue(flagUser), passValue(flagPass)
-
-	hasDSNFlag := isFlagPassed(fs, "dsn")
-	hasUserFlag := isFlagPassed(fs, "user")
-	hasPassFlag := isFlagPassed(fs, "pass")
+func getCredentials(fs *pflag.FlagSet, w io.Writer, dsn redis.DSNValue, flagUser redis.UserValue, flagPass redis.PassValue) (user redis.UserValue, pass redis.PassValue, err error) {
+	hasDSNFlag := redis.IsFlagPassed(fs, "dsn")
+	hasUserFlag := redis.IsFlagPassed(fs, "user")
+	hasPassFlag := redis.IsFlagPassed(fs, "pass")
 
 	if hasDSNFlag && (!hasUserFlag || !hasPassFlag) {
 		var u *url.URL
 
-		u, err = url.Parse(flagDSN)
+		u, err = url.Parse(string(dsn))
 		if err != nil {
 			return "", "", fmt.Errorf("failed parsing Redis DSN: %v", err)
 		}
 		if !hasUserFlag {
-			user = userValue(u.User.Username())
+			user = redis.UserValue(u.User.Username())
 		}
 		if !hasPassFlag {
 			dsnPass, DSNContainsPass := u.User.Password()
 			if DSNContainsPass {
-				pass = passValue(dsnPass)
+				pass = redis.PassValue(dsnPass)
 			} else {
 				// Redis URL parsing accepts single auth element as password, not user
-				pass = passValue(user)
+				pass = redis.PassValue(user)
 				user = ""
 			}
 		}
 	}
-
-	if hasPassFlag && flagPass == "" {
-		pass, err = getPasswordFromCLI(w, passwordReaderFunc(term.ReadPassword), int(os.Stdin.Fd()))
-		if err != nil {
-			return "", "", err
+	if hasUserFlag {
+		user = flagUser
+	}
+	if hasPassFlag {
+		if flagPass == "" {
+			pass, err = getPasswordFromCLI(w, passwordReaderFunc(term.ReadPassword), int(os.Stdin.Fd()))
+			if err != nil {
+				return "", "", err
+			}
+		} else {
+			pass = flagPass
 		}
 	}
-	return
+	return user, pass, nil
 }
