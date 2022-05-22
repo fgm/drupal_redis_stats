@@ -58,3 +58,13 @@ Total              |   44832 | 49714857
 The _Entries_ column provides the number of entries in a cache bin,
 while the _Size_ bin provides the size used by keys and data in Redis
 storage, based on information provided by the `MEMORY USAGE` command.
+
+### Testing
+
+- Run only unit tests: `make test`
+- Run unit and integration tests: `make test-ci`, assuming:
+  - on `localhost:6379`: an unauthenticated Redis instance 
+  - on `localhost:6380`: a Redis instance with: 
+    - `ACL SETUSER alice on ~* &* +@all nopass`
+    - `ACL SETUSER bob on ~* &* +@all >testpass`
+  - a Redis instance with `requirepass testpass` active on `localhost:6380`
