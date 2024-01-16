@@ -15,7 +15,7 @@ site when used on production.
 
 ## Installing
 
-Assuming Go 1.16 or later installed:
+Assuming Go 1.21 or later installed:
 
 ```
 go get -u github.com/fgm/drupal_redis_stats
