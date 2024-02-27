@@ -105,6 +105,7 @@ jobs:
     permissions:
       # required for all workflows
       security-events: write
+      id-token: write
     strategy:
       fail-fast: false
 
