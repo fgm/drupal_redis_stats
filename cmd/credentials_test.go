@@ -1,15 +1,17 @@
-package main
+package cmd
 
 import (
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"os"
 	"syscall"
 	"testing"
 
+	"github.com/spf13/pflag"
 	"golang.org/x/term"
+
+	"github.com/fgm/drupal_redis_stats/redis"
 )
 
 const testPassword = "test-password"
@@ -27,7 +29,7 @@ func TestGetPasswordFromCLI(t *testing.T) {
 		name     string
 		reader   PasswordReader
 		input    io.Reader
-		expValue string
+		expValue redis.PassValue
 		expError error
 	}{
 		{"test happy", readTestPassword(testPassword), f, testPassword, nil},
@@ -60,25 +62,26 @@ func TestGetPasswordFromCLI(t *testing.T) {
 }
 func TestGetCredentials(t *testing.T) {
 	checks := [...]struct {
-		name             string
-		args             []string
-		expUser, expPass string
-		expError         bool
+		name     string
+		args     []string
+		expUser  redis.UserValue
+		expPass  redis.PassValue
+		expError bool
 	}{
 		{"nothing, nil", nil, "", "", false},
-		{"bad dsn", []string{"-dsn", ":localhost/0"}, "", "", true},
-		{"dsn, no info", []string{"-dsn", "redis://localhost/0"}, "", "", false},
-		{"dsn, only pass", []string{"-dsn", "redis://pass@localhost/0"}, "", "pass", false},
-		{"dsn, only empty pass", []string{"-dsn", "redis://@localhost/0"}, "", "", false},
-		{"dsn, user+pass", []string{"-dsn", "redis://foo:bar@localhost/0"}, "foo", "bar", false},
-		{"dsn, user override", []string{"-dsn", "redis://foo:bar@localhost/0", "-user", "u"}, "u", "bar", false},
-		{"dsn, pass override", []string{"-dsn", "redis://foo:bar@localhost/0", "-pass", "p"}, "foo", "p", false},
+		{"bad dsn", []string{"--dsn", ":localhost/0"}, "", "", true},
+		{"dsn, no info", []string{"--dsn", "redis://localhost/0"}, "", "", false},
+		{"dsn, only pass", []string{"--dsn", "redis://pass@localhost/0"}, "", "pass", false},
+		{"dsn, only empty pass", []string{"--dsn", "redis://@localhost/0"}, "", "", false},
+		{"dsn, user+pass", []string{"--dsn", "redis://foo:bar@localhost/0"}, "foo", "bar", false},
+		{"dsn, user override", []string{"--dsn", "redis://foo:bar@localhost/0", "--user", "u"}, "u", "bar", false},
+		{"dsn, pass override", []string{"--dsn", "redis://foo:bar@localhost/0", "--pass", "p"}, "foo", "p", false},
 		// Expect error because, during tests, stdIn is not a terminal
-		{"dsn, empty pass flag", []string{"-dsn", "redis://localhost/0", "-pass", ""}, "", "", true},
+		{"dsn, empty pass flag", []string{"--dsn", "redis://localhost/0", "--pass", ""}, "", "", true},
 	}
 	for _, check := range checks {
 		t.Run(check.name, func(t *testing.T) {
-			fs := flag.NewFlagSet("test", flag.ContinueOnError)
+			fs := pflag.NewFlagSet("test", pflag.ContinueOnError)
 			userFlag := fs.String("user", "", "")
 			passFlag := fs.String("pass", "", "")
 			dsnFlag := fs.String("dsn", "", "")
@@ -86,7 +89,7 @@ func TestGetCredentials(t *testing.T) {
 			if err != nil && !check.expError {
 				t.Fatalf("Unexpected error: %v", err)
 			}
-			user, pass, err := getCredentials(fs, io.Discard, *dsnFlag, *userFlag, *passFlag)
+			user, pass, err := getCredentials(fs, io.Discard, redis.DSNValue(*dsnFlag), redis.UserValue(*userFlag), redis.PassValue(*passFlag))
 			// Redis interprets redis://foo@host as having foo for password, not for user,
 			// unlike normal URL auth parsing.
 			if err != nil && !check.expError {
@@ -104,7 +107,8 @@ func TestGetCredentials(t *testing.T) {
 
 type MockConn struct {
 	RequirePass bool
-	User, Pass  string
+	User        redis.UserValue
+	Pass        redis.PassValue
 }
 
 func (mc *MockConn) Close() error { return nil }
@@ -149,12 +153,14 @@ func (mc *MockConn) Receive() (reply interface{}, err error) { return nil, nil }
 
 func TestAuthenticate(t *testing.T) {
 	checks := [...]struct {
-		name             string
-		includeUser      bool
-		user, pass       string
-		requirePass      bool // redis.conf requirepass = true
-		aclUser, aclPass string
-		expErr           bool
+		name        string
+		includeUser bool
+		user        redis.UserValue
+		pass        redis.PassValue
+		requirePass bool // redis.conf requirepass = true
+		aclUser     redis.UserValue
+		aclPass     redis.PassValue
+		expErr      bool
 	}{
 		{"requirepass, only pass", false, "", "pass", true, "", "pass", false},
 		{"requirepass, no pass", false, "", "", true, "", "pass", true},
@@ -169,7 +175,7 @@ func TestAuthenticate(t *testing.T) {
 				User:        check.aclUser,
 				Pass:        check.aclPass,
 			}
-			err := authenticate(conn, check.includeUser, check.user, check.pass)
+			err := redis.Authenticate(conn, check.includeUser, check.user, check.pass)
 			if err != nil && !check.expErr {
 				t.Fatalf("unexpected error: %v", err)
 			} else if err == nil && check.expErr {

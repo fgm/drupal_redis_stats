@@ -1,18 +1,21 @@
-package main
+package cmd
 
 import (
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"net/url"
 	"os"
 	"unicode/utf8"
 
-	"github.com/gomodule/redigo/redis"
+	"github.com/spf13/pflag"
 	"golang.org/x/term"
+
+	"github.com/fgm/drupal_redis_stats/redis"
 )
 
+// PasswordReader abstracts the term.ReadPassword function, to allow switching
+// it for a version not depending on termios during tests.
 type PasswordReader interface {
 	ReadPassword(int) ([]byte, error)
 }
@@ -23,10 +26,11 @@ func (prf passwordReaderFunc) ReadPassword(fd int) ([]byte, error) {
 	return prf(fd)
 }
 
+// ErrInvalidUTF8 is raised when a string is not valid.
 var ErrInvalidUTF8 = errors.New("input was not a valid UTF-8 string")
 
-func getPasswordFromCLI(w io.Writer, pr PasswordReader, fd int) (string, error) {
-	fmt.Fprint(w, "Password: ")
+func getPasswordFromCLI(w io.Writer, pr PasswordReader, fd int) (redis.PassValue, error) {
+	_, _ = fmt.Fprint(w, "Password: ")
 	pBytes, err := pr.ReadPassword(fd)
 	if err != nil {
 		return "", fmt.Errorf("failed acquiring password from terminal without echo: %w", err)
@@ -34,7 +38,7 @@ func getPasswordFromCLI(w io.Writer, pr PasswordReader, fd int) (string, error) 
 	if !utf8.Valid(pBytes) {
 		return "", fmt.Errorf("invalid password: %w", ErrInvalidUTF8)
 	}
-	return string(pBytes), nil
+	return redis.PassValue(pBytes), nil
 }
 
 // getCredentials combines the user and pass values with those possibly
@@ -42,54 +46,44 @@ func getPasswordFromCLI(w io.Writer, pr PasswordReader, fd int) (string, error) 
 // terminal in echo-less mode.
 //
 // Explicit user/pass flags override those found in the DSN.
-func getCredentials(fs *flag.FlagSet, w io.Writer, flagDSN, flagUser, flagPass string) (user, pass string, err error) {
-	user, pass = flagUser, flagPass
-
-	hasDSNFlag := isFlagPassed(fs, "dsn")
-	hasUserFlag := isFlagPassed(fs, "user")
-	hasPassFlag := isFlagPassed(fs, "pass")
+func getCredentials(fs *pflag.FlagSet, w io.Writer, dsn redis.DSNValue, flagUser redis.UserValue, flagPass redis.PassValue) (user redis.UserValue, pass redis.PassValue, err error) {
+	hasDSNFlag := redis.IsFlagPassed(fs, "dsn")
+	hasUserFlag := redis.IsFlagPassed(fs, "user")
+	hasPassFlag := redis.IsFlagPassed(fs, "pass")
 
 	if hasDSNFlag && (!hasUserFlag || !hasPassFlag) {
 		var u *url.URL
 
-		u, err = url.Parse(flagDSN)
+		u, err = url.Parse(string(dsn))
 		if err != nil {
 			return "", "", fmt.Errorf("failed parsing Redis DSN: %v", err)
 		}
 		if !hasUserFlag {
-			user = u.User.Username()
+			user = redis.UserValue(u.User.Username())
 		}
 		if !hasPassFlag {
 			dsnPass, DSNContainsPass := u.User.Password()
 			if DSNContainsPass {
-				pass = dsnPass
+				pass = redis.PassValue(dsnPass)
 			} else {
 				// Redis URL parsing accepts single auth element as password, not user
-				pass = user
+				pass = redis.PassValue(user)
 				user = ""
 			}
 		}
 	}
-
-	if hasPassFlag && flagPass == "" {
-		pass, err = getPasswordFromCLI(w, passwordReaderFunc(term.ReadPassword), int(os.Stdin.Fd()))
-		if err != nil {
-			return "", "", err
+	if hasUserFlag {
+		user = flagUser
+	}
+	if hasPassFlag {
+		if flagPass == "" {
+			pass, err = getPasswordFromCLI(w, passwordReaderFunc(term.ReadPassword), int(os.Stdin.Fd()))
+			if err != nil {
+				return "", "", err
+			}
+		} else {
+			pass = flagPass
 		}
 	}
-	return
-}
-
-func authenticate(c redis.Conn, includeUser bool, user, pass string) error {
-	var err error
-	if includeUser {
-		_, err = c.Do("AUTH", user, pass)
-	} else {
-		_, err = c.Do("AUTH", pass)
-	}
-	if err != nil {
-		return fmt.Errorf("failed AUTH: %w", err)
-	}
-
-	return nil
+	return user, pass, nil
 }

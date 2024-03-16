@@ -68,27 +68,15 @@ func TestTextSadNil(t *testing.T) {
 	w := strings.Builder{}
 	var s *stats.CacheStats
 
-	recovered := func() (r bool) {
-		defer func() {
-			if panicked := recover(); panicked != nil {
-				r = true
-			}
-		}()
-		output.Text(&w, s)
-		return r
-	}
-	if !recovered() {
-		t.Errorf("test did not panic on nil stats")
+	if err :=output.Text(&w, s); err == nil {
+		t.Errorf("test did not error on nil stats")
 	}
 }
 
 func TestTextSadWriter(t *testing.T) {
-	defer func() {
-		if err := recover(); err == nil {
-			t.Error("calling Text() did not cause panic")
-		}
-	}()
-	output.Text(ErrorWriter(0), &stats.CacheStats{})
+	if err := output.Text(ErrorWriter(0), &stats.CacheStats{}); err == nil {
+		t.Error("unexpected success")
+	}
 }
 
 func TestText(t *testing.T) {
