@@ -104,6 +104,82 @@ func TestText(t *testing.T) {
 	}
 }
 
+func TestTimestamps(t *testing.T) {
+	const label = "(last write timestamps)"
+	withTimestamps := sampleStats
+	withTimestamps.Timestamps = stats.BinStats{Keys: 3, Size: 168}
+
+	tests := [...]struct {
+		name     string
+		stats    *stats.CacheStats
+		expected bool
+	}{
+		{"absent", &sampleStats, false},
+		{"present", &withTimestamps, true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			text := strings.Builder{}
+			output.Text(&text, test.stats)
+			if actual := strings.Contains(text.String(), label); actual != test.expected {
+				t.Errorf("text has timestamps row: %t, expected %t:\n%s", actual, test.expected, text.String())
+			}
+			j := strings.Builder{}
+			_ = output.JSON(&j, test.stats)
+			if actual := strings.Contains(j.String(), `"Timestamps":{"Keys":3,"Size":168}`); actual != test.expected {
+				t.Errorf("JSON has timestamps: %t, expected %t: %s", actual, test.expected, j.String())
+			}
+			if !test.expected && strings.Contains(j.String(), "Timestamps") {
+				t.Errorf("JSON has an empty timestamps field: %s", j.String())
+			}
+		})
+	}
+}
+
+func TestTextLayout(t *testing.T) {
+	bins := map[string]stats.BinStats{"render": {Keys: 3, Size: 150}, "data": {Keys: 1, Size: 20}}
+	tests := [...]struct {
+		name     string
+		stats    stats.CacheStats
+		expected string
+	}{
+		{"no timestamps", stats.CacheStats{TotalKeys: 4, Stats: bins}, `Bin    | Keys | Data
+-------+------+-----
+data   |    1 |   20
+render |    3 |  150
+-------+------+-----
+Total  |    4 |  170
+`},
+		{"timestamps label wider than bins", stats.CacheStats{TotalKeys: 6, Stats: bins, Timestamps: stats.BinStats{Keys: 2, Size: 1000}}, `Bin                     | Keys | Data
+------------------------+------+-----
+data                    |    1 |   20
+render                  |    3 |  150
+------------------------+------+-----
+(last write timestamps) |    2 | 1000
+------------------------+------+-----
+Total                   |    6 | 1170
+`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			w := strings.Builder{}
+			output.Text(&w, &test.stats)
+			if actual := w.String(); actual != test.expected {
+				t.Errorf("got:\n%s\nexpected:\n%s", actual, test.expected)
+			}
+		})
+	}
+}
+
+func TestTextTimestampsOnly(t *testing.T) {
+	const row = "(last write timestamps) |    2 |  160\n"
+	w := strings.Builder{}
+	output.Text(&w, &stats.CacheStats{TotalKeys: 2, Stats: map[string]stats.BinStats{}, Timestamps: stats.BinStats{Keys: 2, Size: 160}})
+	if !strings.Contains(w.String(), row) {
+		t.Errorf("missing timestamps row %q in:\n%s", row, w.String())
+	}
+}
+
 func BenchmarkText(b *testing.B) {
 	w := strings.Builder{}
 	var s = &sampleStats

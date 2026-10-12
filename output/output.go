@@ -31,7 +31,7 @@ func JSON(w io.Writer, stats *stats.CacheStats) error {
 type templateData struct {
 	Stats                              *stats.CacheStats
 	BinsHeader, KeysHeader, SizeHeader string
-	BinsFooter                         string
+	BinsFooter, TimestampsLabel        string
 	BinsLen, KeysLen, SizeLen          int
 }
 
@@ -60,15 +60,21 @@ func Text(w io.Writer, cs *stats.CacheStats) {
 	const keysHeader = "Keys"
 	const sizeHeader = "Data"
 	const binsFooter = "Total"
+	const timestampsLabel = "(last write timestamps)"
+	binsLen := max(cs.MaxBinNameLength(), len(binsFooter))
+	if cs.Timestamps.Keys > 0 {
+		binsLen = max(binsLen, len(timestampsLabel))
+	}
 	data := templateData{
-		Stats:      cs,
-		BinsHeader: binsHeader,
-		KeysHeader: keysHeader,
-		SizeHeader: sizeHeader,
-		BinsFooter: binsFooter,
-		BinsLen:    int(math.Max(float64(cs.MaxBinNameLength()), float64(len(binsFooter)))),
-		KeysLen:    int(math.Max(float64(cs.ItemCountLength()), float64(len(keysHeader)))),
-		SizeLen:    int(math.Max(float64(cs.TotalSizeLength()), float64(len(sizeHeader)))),
+		Stats:           cs,
+		BinsHeader:      binsHeader,
+		KeysHeader:      keysHeader,
+		SizeHeader:      sizeHeader,
+		BinsFooter:      binsFooter,
+		TimestampsLabel: timestampsLabel,
+		BinsLen:         binsLen,
+		KeysLen:         int(math.Max(float64(cs.ItemCountLength()), float64(len(keysHeader)))),
+		SizeLen:         int(math.Max(float64(cs.TotalSizeLength()), float64(len(sizeHeader)))),
 	}
 
 	err := tpl.Execute(w, data)

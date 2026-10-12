@@ -3,7 +3,11 @@ package main
 import (
 	"flag"
 	"fmt"
+	"log"
+	"strings"
 	"testing"
+
+	"github.com/fgm/drupal_redis_stats/stats"
 )
 
 func TestIsFlagPassed(t *testing.T) {
@@ -51,6 +55,32 @@ func TestGetVerboseWriter(t *testing.T) {
 			actualType := fmt.Sprintf("%T", actual)
 			if actualType != check.expectedType {
 				t.Errorf("Expected %s, got %s", actualType, check.expectedType)
+			}
+		})
+	}
+}
+
+func TestWarn(t *testing.T) {
+	tests := [...]struct {
+		name     string
+		stats    stats.CacheStats
+		expected string
+	}{
+		{"all matched", stats.CacheStats{TotalKeys: 5, Stats: map[string]stats.BinStats{"render": {Keys: 1}}}, ""},
+		{"timestamps only", stats.CacheStats{TotalKeys: 5, Timestamps: stats.BinStats{Keys: 1}}, ""},
+		{"one unrecognized", stats.CacheStats{TotalKeys: 5, Stats: map[string]stats.BinStats{"render": {Keys: 1}}, Unrecognized: 1}, "skipped 1 key matching no known Drupal format\n"},
+		{"only unrecognized", stats.CacheStats{TotalKeys: 5, Unrecognized: 2}, "skipped 2 keys matching no known Drupal format\n"},
+		{"empty database", stats.CacheStats{}, "the database is empty\n"},
+		{"one key, not matched", stats.CacheStats{TotalKeys: 1}, `the only key in the database does not match "drupal.redis.*"` + "\n"},
+		{"nothing matched, default prefix", stats.CacheStats{TotalKeys: 5}, `none of the 5 keys in the database match "drupal.redis.*"` + "\n"},
+		{"nothing matched, custom prefix", stats.CacheStats{TotalKeys: 5, Prefix: "my*site"}, `none of the 5 keys in the database match "my\*site:*"` + "\n"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			w := strings.Builder{}
+			warn(log.New(&w, "", 0), &test.stats)
+			if actual := w.String(); actual != test.expected {
+				t.Errorf("got %q, expected %q", actual, test.expected)
 			}
 		})
 	}

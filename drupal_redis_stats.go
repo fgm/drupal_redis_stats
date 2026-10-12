@@ -1,5 +1,5 @@
 /*
-This simple CLI application scans a Redis database for Drupal 8 cache content.
+This simple CLI application scans a Redis database for Drupal cache content.
 
 It then return statistics about that instance, in plain text or JSON.
 */
@@ -35,7 +35,7 @@ func isFlagPassed(fs *flag.FlagSet, name string) bool {
 	return found
 }
 
-// open the Redis connection and authenticate is needed.
+// open the Redis connection and authenticate if needed.
 func open(dsn *string, user string, pass string, fs *flag.FlagSet) (redis.Conn, error) {
 	var c redis.Conn
 	var err error
@@ -53,6 +53,27 @@ func open(dsn *string, user string, pass string, fs *flag.FlagSet) (redis.Conn, 
 	return c, err
 }
 
+// warn reports the keys the scan could not account for.
+func warn(l *log.Logger, cs *stats.CacheStats) {
+	switch n := cs.Unrecognized; {
+	case n == 1:
+		l.Print("skipped 1 key matching no known Drupal format")
+	case n > 1:
+		l.Printf("skipped %d keys matching no known Drupal format", n)
+	}
+	if cs.MatchedKeys()+cs.Unrecognized > 0 {
+		return
+	}
+	switch n := cs.TotalKeys; n {
+	case 0:
+		l.Print("the database is empty")
+	case 1:
+		l.Printf(`the only key in the database does not match "%s"`, cs.MatchPattern())
+	default:
+		l.Printf(`none of the %d keys in the database match "%s"`, n, cs.MatchPattern())
+	}
+}
+
 func main() {
 	var user, pass string
 	var err error
@@ -63,6 +84,7 @@ func main() {
 	flagPass := fs.String("pass", "", "Password. If it is empty it's asked from the tty. Overrides the DSN password.")
 	dsn := fs.String("dsn", "redis://localhost:6379/0", "Can include user and password, per https://www.iana.org/assignments/uri-schemes/prov/redis")
 	jsonOutput := fs.Bool("json", false, "Use JSON output.")
+	prefix := fs.String("prefix", "", "Drupal cache_prefix setting: its string form, or its 'default' entry. Empty for the redis module default.")
 	fs.BoolVar(&quiet, "q", false, "Do not display scan progress")
 	if err := fs.Parse(os.Args[1:]); err != nil {
 		log.Fatalf("failed parsing flags: %v", err)
@@ -80,10 +102,11 @@ func main() {
 	}
 	defer c.Close()
 
-	var stats stats.CacheStats
+	stats := stats.CacheStats{Prefix: *prefix}
 	if err = stats.Scan(c, 0, verboseWriter); err != nil {
 		log.Fatalf("failed SCAN: %v", err)
 	}
+	warn(log.Default(), &stats)
 
 	if *jsonOutput {
 		_ = output.JSON(os.Stdout, &stats)

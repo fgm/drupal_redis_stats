@@ -1,5 +1,5 @@
 /*
-Package stats extracts Drupal 8 cache information from a Redis database.
+Package stats extracts Drupal cache information from a Redis database.
 */
 package stats
 
@@ -8,6 +8,7 @@ import (
 	"io"
 	"regexp"
 	"strconv"
+	"strings"
 
 	"github.com/gomodule/redigo/redis"
 
@@ -43,32 +44,82 @@ type CacheStats struct {
 	//memoryUsed    uint64
 	//memoryPeak    uint64
 	//drupalVersion string
-	//TODO #2
-	//drupalPrefix  string
+
+	// Prefix is the Drupal cache_prefix setting: the string form, or its
+	// 'default' entry. Empty means the redis module default prefix.
+	Prefix    string `json:",omitempty"`
 	TotalKeys uint32 // Redis hardcoded limit.
 	Stats     map[string]BinStats
+
+	// Timestamps holds the last write timestamps of the bins used behind a
+	// ChainedFastBackend. They are not cache entries, so they belong to no bin.
+	Timestamps BinStats `json:",omitzero"`
+
+	// Unrecognized counts the keys under the prefix which match no known format.
+	Unrecognized uint32 `json:"-"`
+}
+
+// globEscape escapes the characters which are special in Redis glob-style patterns.
+func globEscape(s string) string {
+	return strings.NewReplacer(
+		`\`, `\\`, `*`, `\*`, `?`, `\?`, `[`, `\[`, `]`, `\]`,
+	).Replace(s)
+}
+
+/*
+keyPattern returns the SCAN MATCH pattern selecting the Drupal keys for a prefix,
+and the regexp classifying those keys.
+
+The redis module builds cache keys as <prefix>:<bin>:<cid>, except for the
+last write timestamps of a ChainedFastBackend, stored as
+<prefix>:last_write_timestamp_<bin>. When no prefix is configured, it uses
+drupal.redis.<version>.<deployment_identifier>.<hash>.
+Per-bin cache_prefix entries do not apply: the module never passes a bin
+when resolving its prefix, although its README documents them.
+*/
+func keyPattern(prefix string) (string, *regexp.Regexp) {
+	match, rePrefix := "drupal.redis.*", `drupal\.redis\.[-.\d\w]+`
+	if prefix != "" {
+		match, rePrefix = globEscape(prefix)+":*", regexp.QuoteMeta(prefix)
+	}
+	return match, regexp.MustCompile(`^` + rePrefix + `:(?:last_write_timestamp_(\w+)$|(\w+):)`)
+}
+
+type keyKind int
+
+const (
+	unknownKey keyKind = iota
+	binKey
+	timestampKey
+)
+
+// classify returns the kind of key, and the name of the bin it relates to.
+func classify(re *regexp.Regexp, key string) (keyKind, string) {
+	sl := re.FindStringSubmatch(key)
+	switch {
+	case sl == nil:
+		return unknownKey, ""
+	case sl[1] != "":
+		return timestampKey, sl[1]
+	default:
+		return binKey, sl[2]
+	}
 }
 
 // indexKeys assumes cs.Stats is already initialized to a non-nil value.
-func (cs *CacheStats) indexKeys(c redis.Conn, keys []string) error {
-	const reString = `drupal\.redis\.[-.\d\w]+:([\w]+):(.*)`
-
-	var re = regexp.MustCompile(reString)
-
+func (cs *CacheStats) indexKeys(c redis.Conn, re *regexp.Regexp, keys []string) {
 	for _, key := range keys {
-		sl := re.FindStringSubmatch(key)
-		if sl == nil {
-			return fmt.Errorf("unexpected non-matching key: %s", key)
+		switch kind, bin := classify(re, key); kind {
+		case binKey:
+			binStats := cs.Stats[bin]
+			binStats.addEntry(c, key)
+			cs.Stats[bin] = binStats
+		case timestampKey:
+			cs.Timestamps.addEntry(c, key)
+		default:
+			cs.Unrecognized++
 		}
-		bin := sl[1]
-		if _, ok := cs.Stats[bin]; !ok {
-			cs.Stats[bin] = BinStats{}
-		}
-		binStats := cs.Stats[bin]
-		binStats.addEntry(c, key)
-		cs.Stats[bin] = binStats
 	}
-	return nil
 }
 
 /*
@@ -86,7 +137,8 @@ func (cs CacheStats) MaxBinNameLength() int {
 }
 
 /*
-Scan examines the active database for keys matching the Drupal cache bin format.
+Scan examines the active database for keys matching the Drupal cache bin format,
+using cs.Prefix as the Drupal cache_prefix.
 
   - c is the established connection to Redis on which to perform the Scan.
   - maxPasses allows limiting the number of Redis SCAN steps. Use 0 for no limit.
@@ -102,6 +154,7 @@ func (cs *CacheStats) Scan(c redis.Conn, maxPasses uint32, w io.Writer) error {
 		return err
 	}
 	cs.TotalKeys = uint32(dbSize) // Cannot be >= 2^32 in Redis anyway.
+	match, re := keyPattern(cs.Prefix)
 	pb := progress.MakeProgressBar(80, cs.TotalKeys)
 	var passes uint32 // The number of performed SCAN passes.
 	var seen float64
@@ -110,7 +163,7 @@ func (cs *CacheStats) Scan(c redis.Conn, maxPasses uint32, w io.Writer) error {
 	for {
 		passes++
 		// Run one Scan pass with the current iterator position.
-		arr, err := redis.Values(c.Do("SCAN", iterator, "MATCH", "drupal.redis.*"))
+		arr, err := redis.Values(c.Do("SCAN", iterator, "MATCH", match))
 		if err != nil {
 			return err
 		}
@@ -119,10 +172,7 @@ func (cs *CacheStats) Scan(c redis.Conn, maxPasses uint32, w io.Writer) error {
 		keys, _ = redis.Strings(arr[1], nil)
 		seen += float64(len(keys))
 		_, _ = fmt.Fprint(w, pb.Render(seen))
-		err = cs.indexKeys(c, keys)
-		if err != nil {
-			return err
-		}
+		cs.indexKeys(c, re, keys)
 		// When iteration is done, the returned iterator will be 0.
 		if iterator == 0 || (maxPasses != 0 && passes >= maxPasses) {
 			break
@@ -130,6 +180,23 @@ func (cs *CacheStats) Scan(c redis.Conn, maxPasses uint32, w io.Writer) error {
 	}
 	_, _ = fmt.Fprint(w, pb.Remove())
 	return nil
+}
+
+// MatchPattern returns the SCAN MATCH pattern selecting the keys under cs.Prefix.
+func (cs CacheStats) MatchPattern() string {
+	match, _ := keyPattern(cs.Prefix)
+	return match
+}
+
+/*
+MatchedKeys returns the number of keys counted in bins or as timestamps.
+*/
+func (cs CacheStats) MatchedKeys() uint32 {
+	sum := cs.Timestamps.Keys
+	for _, v := range cs.Stats {
+		sum += v.Keys
+	}
+	return sum
 }
 
 /*
@@ -142,12 +209,12 @@ func (cs CacheStats) ItemCountLength() uint {
 }
 
 /*
-TotalSize returns the total ize used by the cache.
+TotalSize returns the total size used by the cache.
 
 By Redis MEMORY USAGE description, this includes both keys and data.
 */
 func (cs CacheStats) TotalSize() int64 {
-	var sizeSum int64
+	sizeSum := cs.Timestamps.Size
 	for _, v := range cs.Stats {
 		sizeSum += v.Size
 	}
