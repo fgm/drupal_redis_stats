@@ -77,10 +77,15 @@ Total              | 45760 | 49795911
 
 - _Keys_ is the number of entries in a cache bin or category.
 - _Data_ is the size used by keys and data in Redis storage,
-  per the `MEMORY USAGE` command.
+  per the `MEMORY USAGE` command with `SAMPLES 0`, which measures every field
+  of the module's cache entries instead of estimating from a sample:
+  before Redis 8.4, sampled sizes can be off by orders of magnitude,
+  and change at each Redis restart.
 - The rows in parentheses are module keys which belong to no cache bin,
   each omitted when it has no keys:
-  - _(cache tags)_: the cache tag invalidation checksums;
+  - _(cache tags)_: the cache tag invalidation checksums.
+    Without this row, the site keeps them elsewhere, usually in its database,
+    because the redis module's cache tags service is not enabled;
   - _(flood)_: the flood control counters, such as failed logins;
   - _(locks)_: the locks currently held;
   - _(timestamps)_: the last write timestamps `ChainedFastBackend` uses

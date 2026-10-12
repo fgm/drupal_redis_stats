@@ -41,6 +41,10 @@ func (fc *fakeConn) Do(commandName string, args ...any) (any, error) {
 		}
 		return []any{[]byte(strconv.Itoa(next)), keys}, nil
 	case "MEMORY":
+		// Without SAMPLES 0, Redis before 8.4 estimates hash sizes from a sample of fields.
+		if len(args) != 4 || args[2] != "SAMPLES" || args[3] != 0 {
+			return nil, fmt.Errorf("MEMORY USAGE without SAMPLES 0: %v", args)
+		}
 		// The size is the key length, so each key has a distinct, predictable size.
 		return int64(len(args[1].(string))), nil
 	default:

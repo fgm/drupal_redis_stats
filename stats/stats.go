@@ -26,10 +26,16 @@ type BinStats struct {
 
 /*
 addEntry stores the key and data size for a Redis key.
+
+SAMPLES 0 measures every field of a hash. With the default sample of 5 fields,
+Redis before 8.4 picks the fields by a hash seed drawn at each process start,
+so the module's 8-field cache entries measured 0.009 times their size in one
+process and 1.6 times in another: sampled sizes are neither accurate nor
+reproducible. From Redis 8.4, both forms give the exact size.
 */
 func (bs *BinStats) addEntry(c redis.Conn, key string) {
 	bs.Keys++
-	val, err := redis.Int64(c.Do("MEMORY", "USAGE", key))
+	val, err := redis.Int64(c.Do("MEMORY", "USAGE", key, "SAMPLES", 0))
 	if err != nil {
 		panic(fmt.Errorf("failed MEMORY USAGE: %v", err))
 	}
