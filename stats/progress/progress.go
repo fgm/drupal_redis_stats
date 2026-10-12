@@ -35,7 +35,9 @@ func (pb *Bar) Render(current float64) string {
 	if pb.max == 0 {
 		return aec.Up(1).String()
 	}
-	ratio := int(math.Round(float64((pb.width-2)*pb.max) / float64(pb.max)))
+	// Keys added during the scan can take current past max: cap the bar there.
+	full := pb.width - 2
+	ratio := min(int(math.Round(float64(full)*current/float64(pb.max))), int(full))
 	res := fmt.Sprintf("[%s%s %d/%d%s\n",
 		pb.bar.Apply(strings.Repeat("=", ratio)),
 		pb.right.Apply("]"),

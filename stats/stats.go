@@ -4,6 +4,7 @@ Package stats extracts Drupal cache information from a Redis database.
 package stats
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"regexp"
@@ -24,16 +25,10 @@ type BinStats struct {
 	Size int64
 }
 
-/*
-addEntry stores the key and data size for a Redis key.
-*/
-func (bs *BinStats) addEntry(c redis.Conn, key string) {
+// add counts one key of the given size.
+func (bs *BinStats) add(size int64) {
 	bs.Keys++
-	val, err := redis.Int64(c.Do("MEMORY", "USAGE", key))
-	if err != nil {
-		panic(fmt.Errorf("failed MEMORY USAGE: %v", err))
-	}
-	bs.Size += val
+	bs.Size += size
 }
 
 /*
@@ -65,6 +60,10 @@ type CacheStats struct {
 
 	// Unrecognized counts the keys under the prefix which match no known format.
 	Unrecognized uint32 `json:"-"`
+
+	// Vanished counts the keys which disappeared between SCAN and MEMORY USAGE,
+	// deleted by the site or expired.
+	Vanished uint32 `json:"-"`
 }
 
 // globEscape escapes the characters which are special in Redis glob-style patterns.
@@ -127,26 +126,81 @@ func classify(re *regexp.Regexp, key string) (keyKind, string) {
 	}
 }
 
-// indexKeys assumes cs.Stats is already initialized to a non-nil value.
-func (cs *CacheStats) indexKeys(c redis.Conn, re *regexp.Regexp, keys []string) {
+// add counts a key of the given kind and size, in its bin for a bin key.
+func (cs *CacheStats) add(kind keyKind, bin string, size int64) {
+	switch kind {
+	case binKey:
+		binStats := cs.Stats[bin]
+		binStats.add(size)
+		cs.Stats[bin] = binStats
+	case timestampKey:
+		cs.Timestamps.add(size)
+	case cacheTagKey:
+		cs.CacheTags.add(size)
+	case floodKey:
+		cs.Flood.add(size)
+	case lockKey:
+		cs.Locks.add(size)
+	}
+}
+
+/*
+indexKeys measures the keys of one SCAN batch, and counts them.
+
+It pipelines the MEMORY USAGE commands, so a batch costs one round trip
+instead of one per key, which dominated the scan time over a network.
+It assumes cs.Stats is already initialized to a non-nil value.
+*/
+func (cs *CacheStats) indexKeys(c redis.Conn, re *regexp.Regexp, keys []string) error {
+	type pending struct {
+		kind keyKind
+		bin  string
+	}
+	queued := make([]pending, 0, len(keys))
 	for _, key := range keys {
-		switch kind, bin := classify(re, key); kind {
-		case binKey:
-			binStats := cs.Stats[bin]
-			binStats.addEntry(c, key)
-			cs.Stats[bin] = binStats
-		case timestampKey:
-			cs.Timestamps.addEntry(c, key)
-		case cacheTagKey:
-			cs.CacheTags.addEntry(c, key)
-		case floodKey:
-			cs.Flood.addEntry(c, key)
-		case lockKey:
-			cs.Locks.addEntry(c, key)
-		default:
+		kind, bin := classify(re, key)
+		if kind == unknownKey {
 			cs.Unrecognized++
+			continue
+		}
+		// SAMPLES 0 measures every field of a hash. With the default sample of
+		// 5 fields, Redis before 8.4 picks the fields by a hash seed drawn at each
+		// process start, so one of the module's 8-field cache entries, with a
+		// 200,000-byte data field, measured 0.002 times its size in one process
+		// and 1.6 times in another (#17): sampled sizes are neither accurate nor
+		// reproducible. From Redis 8.4, both forms give the exact size.
+		if err := c.Send("MEMORY", "USAGE", key, "SAMPLES", 0); err != nil {
+			return fmt.Errorf("failed queuing MEMORY USAGE: %w", err)
+		}
+		queued = append(queued, pending{kind, bin})
+	}
+	if len(queued) == 0 {
+		return nil
+	}
+	if err := c.Flush(); err != nil {
+		return fmt.Errorf("failed sending MEMORY USAGE: %w", err)
+	}
+	var firstErr error
+	for _, p := range queued {
+		size, err := redis.Int64(c.Receive())
+		var reply redis.Error
+		switch {
+		case errors.Is(err, redis.ErrNil):
+			cs.Vanished++
+		case errors.As(err, &reply):
+			// An error reply, such as NOPERM, leaves the connection usable,
+			// so the remaining replies are still read, leaving none pending.
+			if firstErr == nil {
+				firstErr = fmt.Errorf("failed MEMORY USAGE: %w", err)
+			}
+		case err != nil:
+			// Any other error breaks the connection: nothing more can be read.
+			return fmt.Errorf("failed reading MEMORY USAGE: %w", err)
+		default:
+			cs.add(p.kind, p.bin, size)
 		}
 	}
+	return firstErr
 }
 
 /*
@@ -160,15 +214,24 @@ func (cs CacheStats) MaxBinNameLength() int {
 	return longest
 }
 
+// ScanCount is the SCAN COUNT hint Scan uses in production:
+// see docs/adr/001-pipelining-and-a-fixed-scan-count.md for its measurements.
+const ScanCount = 1000
+
 /*
 Scan examines the active database for keys matching the Drupal cache bin format,
 using cs.Prefix as the Drupal cache_prefix.
 
   - c is the established connection to Redis on which to perform the Scan.
+  - count is the SCAN COUNT hint: about how many keys each SCAN step examines.
+    Redis rejects values below 1.
   - maxPasses allows limiting the number of Redis SCAN steps. Use 0 for no limit.
   - writer is a logging output (think os.Stderr), not the main output.
 */
-func (cs *CacheStats) Scan(c redis.Conn, maxPasses uint32, w io.Writer) error {
+func (cs *CacheStats) Scan(c redis.Conn, count uint, maxPasses uint32, w io.Writer) error {
+	if count == 0 {
+		return errors.New("SCAN COUNT must be at least 1")
+	}
 	if cs.Stats == nil {
 		cs.Stats = map[string]BinStats{}
 	}
@@ -187,7 +250,7 @@ func (cs *CacheStats) Scan(c redis.Conn, maxPasses uint32, w io.Writer) error {
 	for {
 		passes++
 		// Run one Scan pass with the current iterator position.
-		arr, err := redis.Values(c.Do("SCAN", iterator, "MATCH", match))
+		arr, err := redis.Values(c.Do("SCAN", iterator, "MATCH", match, "COUNT", count))
 		if err != nil {
 			return err
 		}
@@ -196,7 +259,9 @@ func (cs *CacheStats) Scan(c redis.Conn, maxPasses uint32, w io.Writer) error {
 		keys, _ = redis.Strings(arr[1], nil)
 		seen += float64(len(keys))
 		_, _ = fmt.Fprint(w, pb.Render(seen))
-		cs.indexKeys(c, re, keys)
+		if err = cs.indexKeys(c, re, keys); err != nil {
+			return err
+		}
 		// When iteration is done, the returned iterator will be 0.
 		if iterator == 0 || (maxPasses != 0 && passes >= maxPasses) {
 			break
