@@ -108,6 +108,19 @@ Total              | 45760 | 49795911
 - Keys under the prefix which match no known format, or which are deleted
   or expire during the scan, are skipped, and their count is reported on stderr.
 
+## Testing
+
+`make test` runs the tests against real Redis servers,
+started in containers through [Testcontainers](https://golang.testcontainers.org/),
+so it needs a running Docker engine, such as Docker Desktop or OrbStack:
+without one, the tests needing Redis fail.
+So do `make cover`, and `make install`, which runs the tests first.
+
+Each such test reserves a database for itself on each server, and never releases it,
+since the servers last for the whole `go test` process.
+So `go test -count=N` fails once N runs reserve more databases than a server has:
+the limit is the `databases` constant in `internal/redistest/redistest.go`.
+
 ## 🤖 AI and Automation Policy
 
 We believe in transparency regarding how this project is built and maintained:
