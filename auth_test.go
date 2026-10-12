@@ -194,3 +194,41 @@ func TestOpen(t *testing.T) {
 		})
 	}
 }
+
+// TestOpenInvalidDSN checks that open rejects each kind of invalid DSN,
+// and reports where it failed: its own parsing, redigo's, or the server.
+//
+// Parsing in open is only reached when both -user and -pass are given,
+// since getCredentials parses the DSN otherwise.
+func TestOpenInvalidDSN(t *testing.T) {
+	for _, s := range redistest.Servers(t) {
+		t.Run(s.Image, func(t *testing.T) {
+			t.Parallel()
+			checks := [...]struct {
+				name, dsn    string
+				expPrefix    string
+				expSubstring string
+			}{
+				{"unparsable", ":localhost/0", "failed parsing Redis DSN", "missing protocol scheme"},
+				{"wrong scheme", "http://" + s.Addr() + "/0", "failed dialing Redis URL", "invalid redis URL scheme"},
+				{"non-numeric database", "redis://" + s.Addr() + "/x", "failed dialing Redis URL", "invalid database"},
+				// The servers have databases 0 to 63.
+				{"database out of range", "redis://" + s.Addr() + "/64", "failed dialing Redis URL", "DB index is out of range"},
+				// Port 1 is privileged, and its TCPMUX service is obsolete: nothing listens on it.
+				{"nothing listening", "redis://127.0.0.1:1/0", "failed dialing Redis URL", "connection refused"},
+			}
+			for _, check := range checks {
+				t.Run(check.name, func(t *testing.T) {
+					c, err := open(check.dsn, "", redistest.Password)
+					if err == nil {
+						c.Close()
+						t.Fatal("expected an error")
+					}
+					if msg := err.Error(); !strings.HasPrefix(msg, check.expPrefix) || !strings.Contains(msg, check.expSubstring) {
+						t.Errorf("got error %q, expected %q, containing %q", msg, check.expPrefix, check.expSubstring)
+					}
+				})
+			}
+		})
+	}
+}
