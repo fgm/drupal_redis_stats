@@ -71,7 +71,7 @@ func main() {
 
 	verboseWriter := getVerboseWriter(quiet)
 
-	if user, pass, err = getCredentials(fs, os.Stdout, *dsn, *flagUser, *flagPass); err != nil {
+	if user, pass, err = getCredentials(fs, os.Stderr, *dsn, *flagUser, *flagPass); err != nil {
 		log.Fatalf("failed obtaining user/pass: %v", err)
 	}
 
@@ -87,7 +87,7 @@ func main() {
 	}
 
 	if *jsonOutput {
-		_ = output.JSON(os.Stderr, &stats)
+		_ = output.JSON(os.Stdout, &stats)
 	} else {
 		output.Text(os.Stdout, &stats)
 	}
