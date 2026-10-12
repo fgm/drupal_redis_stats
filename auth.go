@@ -28,6 +28,8 @@ var ErrInvalidUTF8 = errors.New("input was not a valid UTF-8 string")
 func getPasswordFromCLI(w io.Writer, pr PasswordReader, fd int) (string, error) {
 	fmt.Fprint(w, "Password: ")
 	pBytes, err := pr.ReadPassword(fd)
+	// ReadPassword does not echo the newline typed after the password.
+	fmt.Fprintln(w)
 	if err != nil {
 		return "", fmt.Errorf("failed acquiring password from terminal without echo: %w", err)
 	}

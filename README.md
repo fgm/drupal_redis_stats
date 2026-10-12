@@ -33,6 +33,7 @@ go get -u github.com/fgm/drupal_redis_stats
   - `-dsn redis://<password>@<host>:<port>/<db>` for `requirepass` AUTH mode
   - `-dsn redis://<user>:<password>@<host>:<port>/<db>` for ACL AUTH mode
 - `-json` provides JSON output instead of the default human-readable format
+  - like the text output, it goes to stdout, while the progress bar goes to stderr
 - `-q` disables the progress bar used during the database SCAN loop
 
 

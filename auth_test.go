@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"syscall"
 	"testing"
 
@@ -42,7 +43,11 @@ func TestGetPasswordFromCLI(t *testing.T) {
 				t.Fatalf("failed creating alternate input: %v", err)
 			}
 
-			actual, err := getPasswordFromCLI(io.Discard, check.reader, int(f.Fd()))
+			w := strings.Builder{}
+			actual, err := getPasswordFromCLI(&w, check.reader, int(f.Fd()))
+			if prompt := w.String(); prompt != "Password: \n" {
+				t.Errorf("expected prompt %q, got %q", "Password: \n", prompt)
+			}
 			if check.expError != nil {
 				if err == nil {
 					t.Fatalf("did not get expected error")
