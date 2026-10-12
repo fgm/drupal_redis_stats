@@ -7,12 +7,9 @@ package main
 
 import (
 	"flag"
-	"fmt"
 	"io"
 	"log"
 	"os"
-
-	"github.com/gomodule/redigo/redis"
 
 	"github.com/fgm/drupal_redis_stats/output"
 	"github.com/fgm/drupal_redis_stats/stats"
@@ -33,24 +30,6 @@ func isFlagPassed(fs *flag.FlagSet, name string) bool {
 		}
 	})
 	return found
-}
-
-// open the Redis connection and authenticate if needed.
-func open(dsn *string, user string, pass string, fs *flag.FlagSet) (redis.Conn, error) {
-	var c redis.Conn
-	var err error
-
-	// Connect to the server (ex: DB #1, default #0).
-	if c, err = redis.DialURL(*dsn); err != nil {
-		return nil, fmt.Errorf("failed dialing Redis URL: %w", err)
-	}
-
-	if user != "" || pass != "" {
-		if err = authenticate(c, isFlagPassed(fs, "user"), user, pass); err != nil {
-			return nil, err
-		}
-	}
-	return c, err
 }
 
 // warn reports the keys the scan could not account for.
@@ -102,7 +81,7 @@ func main() {
 		log.Fatalf("failed obtaining user/pass: %v", err)
 	}
 
-	c, err := open(dsn, user, pass, fs)
+	c, err := open(*dsn, user, pass)
 	if err != nil {
 		log.Fatal(err)
 	}
