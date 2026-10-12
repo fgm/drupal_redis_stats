@@ -70,6 +70,8 @@ func TestWarn(t *testing.T) {
 		{"timestamps only", stats.CacheStats{TotalKeys: 5, Timestamps: stats.BinStats{Keys: 1}}, ""},
 		{"one unrecognized", stats.CacheStats{TotalKeys: 5, Stats: map[string]stats.BinStats{"render": {Keys: 1}}, Unrecognized: 1}, "skipped 1 key matching no known Drupal format\n"},
 		{"only unrecognized", stats.CacheStats{TotalKeys: 5, Unrecognized: 2}, "skipped 2 keys matching no known Drupal format\n"},
+		{"one vanished", stats.CacheStats{TotalKeys: 5, Stats: map[string]stats.BinStats{"render": {Keys: 1}}, Vanished: 1}, "skipped 1 key deleted or expired during the scan\n"},
+		{"only vanished", stats.CacheStats{TotalKeys: 5, Vanished: 2}, "skipped 2 keys deleted or expired during the scan\n"},
 		{"empty database", stats.CacheStats{}, "the database is empty\n"},
 		{"one key, not matched", stats.CacheStats{TotalKeys: 1}, `the only key in the database does not match "drupal.redis.*"` + "\n"},
 		{"nothing matched, default prefix", stats.CacheStats{TotalKeys: 5}, `none of the 5 keys in the database match "drupal.redis.*"` + "\n"},

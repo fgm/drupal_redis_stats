@@ -52,6 +52,19 @@ go install github.com/fgm/drupal_redis_stats@latest
 - `-q` disables the progress bar used during the database SCAN loop
 
 
+### Impact on the site
+
+The scan walks the database in `SCAN` steps of about 1000 keys,
+and measures each step's keys in a single pipelined round trip.
+
+- Each step costs Redis about 0.7 ms on Redis 8.10 and 1.9 ms on 7.4,
+  split into several reads between which it serves its other clients.
+- A million cache entries take about 3 seconds over a same-zone network.
+
+The measurements behind these figures, and the choices they support,
+are in [ADR-001](docs/adr/001-pipelining-and-a-fixed-scan-count.md).
+
+
 ### Sample results
 
 ```
@@ -77,18 +90,23 @@ Total              | 45760 | 49795911
 
 - _Keys_ is the number of entries in a cache bin or category.
 - _Data_ is the size used by keys and data in Redis storage,
-  per the `MEMORY USAGE` command.
+  per the `MEMORY USAGE` command with `SAMPLES 0`, which measures every field
+  of the module's cache entries instead of estimating from a sample:
+  before Redis 8.4, sampled sizes can be off by orders of magnitude,
+  and change at each Redis restart.
 - The rows in parentheses are module keys which belong to no cache bin,
   each omitted when it has no keys:
-  - _(cache tags)_: the cache tag invalidation checksums;
+  - _(cache tags)_: the cache tag invalidation checksums.
+    Without this row, the site keeps them elsewhere, usually in its database,
+    because the redis module's cache tags service is not enabled;
   - _(flood)_: the flood control counters, such as failed logins;
   - _(locks)_: the locks currently held;
   - _(timestamps)_: the last write timestamps `ChainedFastBackend` uses
     for the bins it serves, and the last delete-all timestamp of each bin.
 - _Total_ is the size of all the counted keys,
   but the number of keys in the whole database, matched or not.
-- Keys under the prefix which match no known format are skipped,
-  and their count is reported on stderr.
+- Keys under the prefix which match no known format, or which are deleted
+  or expire during the scan, are skipped, and their count is reported on stderr.
 
 ## 🤖 AI and Automation Policy
 
