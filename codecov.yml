@@ -1,0 +1,5 @@
+# internal/redistest is test infrastructure, like the _test.go files:
+# it only runs from the tests of other packages, which per-package coverage
+# does not credit to it, so its figures say nothing about the code shipped.
+ignore:
+  - "internal/redistest"

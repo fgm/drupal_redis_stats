@@ -129,11 +129,6 @@ func start() {
 	}
 }
 
-// Addr returns the host:port the server listens on.
-func (s *Server) Addr() string {
-	return s.addr
-}
-
 // URL returns the URL of a database on the server, for user and pass.
 // An empty user means the default user.
 func (s *Server) URL(user, pass string, db int) string {
