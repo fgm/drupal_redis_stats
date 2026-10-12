@@ -6,3 +6,4 @@ drupal_redis_stats
 # Generated files
 Test
 c.out
+coverage

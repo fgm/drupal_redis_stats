@@ -1,11 +1,10 @@
 Drupal Redis Stats
 ==================
 
-[![GoDoc](https://godoc.org/github.com/fgm/drupal_redis_stats?status.svg)](https://godoc.org/github.com/fgm/drupal_redis_stats)
-[![Go Report Card](https://goreportcard.com/badge/github.com/fgm/drupal_redis_stats)](https://goreportcard.com/report/github.com/fgm/drupal_redis_stats)
-[![Build Status](https://travis-ci.org/fgm/drupal_redis_stats.svg?branch=master)](https://travis-ci.org/fgm/drupal_redis_stats)
+[![GoDoc](https://pkg.go.dev/badge/github.com/fgm/drupal_redis_stats)](https://pkg.go.dev/github.com/fgm/drupal_redis_stats)
+[![CI](https://github.com/fgm/drupal_redis_stats/actions/workflows/tests.yml/badge.svg)](https://github.com/fgm/drupal_redis_stats/actions/workflows/tests.yml)
 [![codecov](https://codecov.io/gh/fgm/drupal_redis_stats/branch/main/graph/badge.svg?token=QR0XKBK3DF)](https://codecov.io/gh/fgm/drupal_redis_stats)
-[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/fgm/drupal_redis_stats/badge)](https://securityscorecards.dev/viewer/?uri=github.com/fgm/drupal_redis_stats)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/fgm/drupal_redis_stats/badge)](https://scorecard.dev/viewer/?uri=github.com/fgm/drupal_redis_stats)
 [![FOSSA Status](https://app.fossa.com/api/projects/custom%2B11916%2Fgithub.com%2Ffgm%2Fdrupal_redis_stats.svg?type=shield)](https://app.fossa.com/projects/custom%2B11916%2Fgithub.com%2Ffgm%2Fdrupal_redis_stats?ref=badge_shield)
 
 This command provides a summary of the use of a Redis database by the 
