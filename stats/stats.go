@@ -61,8 +61,9 @@ type CacheStats struct {
 	// Unrecognized counts the keys under the prefix which match no known format.
 	Unrecognized uint32 `json:"-"`
 
-	// Expired counts the keys which disappeared between SCAN and MEMORY USAGE.
-	Expired uint32 `json:"-"`
+	// Vanished counts the keys which disappeared between SCAN and MEMORY USAGE,
+	// deleted by the site or expired.
+	Vanished uint32 `json:"-"`
 }
 
 // globEscape escapes the characters which are special in Redis glob-style patterns.
@@ -164,10 +165,10 @@ func (cs *CacheStats) indexKeys(c redis.Conn, re *regexp.Regexp, keys []string) 
 		}
 		// SAMPLES 0 measures every field of a hash. With the default sample of
 		// 5 fields, Redis before 8.4 picks the fields by a hash seed drawn at each
-		// process start, so the module's 8-field cache entries measured 0.009
-		// times their size in one process and 1.6 times in another: sampled sizes
-		// are neither accurate nor reproducible. From Redis 8.4, both forms give
-		// the exact size.
+		// process start, so one of the module's 8-field cache entries, with a
+		// 200,000-byte data field, measured 0.002 times its size in one process
+		// and 1.6 times in another (#17): sampled sizes are neither accurate nor
+		// reproducible. From Redis 8.4, both forms give the exact size.
 		if err := c.Send("MEMORY", "USAGE", key, "SAMPLES", 0); err != nil {
 			return fmt.Errorf("failed queuing MEMORY USAGE: %w", err)
 		}
@@ -179,18 +180,27 @@ func (cs *CacheStats) indexKeys(c redis.Conn, re *regexp.Regexp, keys []string) 
 	if err := c.Flush(); err != nil {
 		return fmt.Errorf("failed sending MEMORY USAGE: %w", err)
 	}
+	var firstErr error
 	for _, p := range queued {
 		size, err := redis.Int64(c.Receive())
+		var reply redis.Error
 		switch {
 		case errors.Is(err, redis.ErrNil):
-			cs.Expired++
+			cs.Vanished++
+		case errors.As(err, &reply):
+			// An error reply, such as NOPERM, leaves the connection usable,
+			// so the remaining replies are still read, leaving none pending.
+			if firstErr == nil {
+				firstErr = fmt.Errorf("failed MEMORY USAGE: %w", err)
+			}
 		case err != nil:
-			return fmt.Errorf("failed MEMORY USAGE: %w", err)
+			// Any other error breaks the connection: nothing more can be read.
+			return fmt.Errorf("failed reading MEMORY USAGE: %w", err)
 		default:
 			cs.add(p.kind, p.bin, size)
 		}
 	}
-	return nil
+	return firstErr
 }
 
 /*
@@ -213,7 +223,7 @@ Scan examines the active database for keys matching the Drupal cache bin format,
 using cs.Prefix as the Drupal cache_prefix.
 
   - c is the established connection to Redis on which to perform the Scan.
-  - count is the SCAN COUNT hint: the number of buckets each SCAN step examines.
+  - count is the SCAN COUNT hint: about how many keys each SCAN step examines.
     Redis rejects values below 1.
   - maxPasses allows limiting the number of Redis SCAN steps. Use 0 for no limit.
   - writer is a logging output (think os.Stderr), not the main output.

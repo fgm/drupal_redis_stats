@@ -54,10 +54,11 @@ go install github.com/fgm/drupal_redis_stats@latest
 
 ### Impact on the site
 
-The scan walks the database in `SCAN` steps of about 1000 hash table buckets,
+The scan walks the database in `SCAN` steps of about 1000 keys,
 and measures each step's keys in a single pipelined round trip.
 
-- Each step blocks Redis for about half a millisecond.
+- Each step costs Redis about 0.7 ms on Redis 8.10 and 1.9 ms on 7.4,
+  split into several reads between which it serves its other clients.
 - A million cache entries take about 3 seconds over a same-zone network.
 
 The measurements behind these figures, and the choices they support,
@@ -104,8 +105,8 @@ Total              | 45760 | 49795911
     for the bins it serves, and the last delete-all timestamp of each bin.
 - _Total_ is the size of all the counted keys,
   but the number of keys in the whole database, matched or not.
-- Keys under the prefix which match no known format, or which expire
-  during the scan, are skipped, and their count is reported on stderr.
+- Keys under the prefix which match no known format, or which are deleted
+  or expire during the scan, are skipped, and their count is reported on stderr.
 
 ## 🤖 AI and Automation Policy
 

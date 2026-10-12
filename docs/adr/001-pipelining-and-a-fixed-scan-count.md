@@ -18,8 +18,8 @@ Sites using Redis for their Drupal cache are usually the large ones,
 with a million cache entries or more,
 so one round trip per key decides the duration of the whole scan.
 
-`COUNT` is a hint: each `SCAN` step walks about that many hash table buckets,
-and Redis serves no other client meanwhile.
+`COUNT` is a hint: each `SCAN` step examines about that many keys,
+and Redis serves no other client during that step.
 A larger value means fewer steps, each blocking the site's Redis longer.
 
 ## Decision
@@ -29,7 +29,7 @@ A larger value means fewer steps, each blocking the site's Redis longer.
    A batch costs one round trip, instead of one per key.
 2. **Use a fixed `COUNT` of 1000**, `stats.ScanCount`, with no command-line flag.
 
-Keys that expire between `SCAN` and `MEMORY USAGE`, for which Redis answers nil,
+Keys deleted or expired between `SCAN` and `MEMORY USAGE`, for which Redis answers nil,
 are skipped and reported on stderr, instead of aborting the scan.
 
 ## Measurements
@@ -61,7 +61,9 @@ The spot client was reclaimed during the sequential run on 7.4.1 at `COUNT` 10,0
 That run was repeated from an on-demand client against the same data.
 
 Whole scan, and Redis time per command from `INFO commandstats`,
-default -count in bold:
+the chosen `COUNT` of 1000 in bold.
+Before this change, the scan ran sequentially with Redis's default `COUNT` of 10:
+the first row of each version.
 
 | Redis  | mode       |  `COUNT` |      scan | `SCAN` steps | Redis time per `SCAN` | Redis time per `MEMORY USAGE` |
 |--------|------------|---------:|----------:|-------------:|----------------------:|------------------------------:|
@@ -93,10 +95,11 @@ default -count in bold:
 Setup, 2026-10-12: Apple M1 Max, Redis 8.10.2 from Homebrew on the same machine,
 reached over loopback TCP.
 Data: 200,000 two-field hashes, `cid` and `data` of 100, 300 or 800 B, over 6 bins,
-loaded from the same seed for both modes.
+loaded from the same seed for both modes, each on a fresh Redis:
+the step counts differ slightly because each hash table grew differently.
 
 Whole scan, and Redis time per command from `INFO commandstats`,
-default `COUNT` in bold:
+the chosen `COUNT` of 1000 in bold:
 
 | mode       |  `COUNT` |       scan | `SCAN` steps | Redis time per `SCAN` | Redis time per `MEMORY USAGE` |
 |------------|---------:|-----------:|-------------:|----------------------:|------------------------------:|
@@ -140,7 +143,7 @@ From the pipelined runs above:
 |   10,000 |         3.0 s |          3.0 s |              4.9 to 6.3 ms |
 
 Above 1000, the scan gets no faster while each step blocks Redis ten times longer.
-Below it, the scan slows thirteenfold to save half a millisecond per step.
+Below it, the scan slows thirteenfold to shorten each `SCAN` by about half a millisecond.
 A flag would only serve to choose a worse value,
 and would need validation, help text and documentation to explain why.
 
@@ -164,8 +167,18 @@ this was checked on Redis 8.10.
 
 - A scan takes about 3 s per million cache entries on a same-zone network,
   instead of about 3 minutes.
-- Each `SCAN` step blocks Redis for about half a millisecond.
-- A key expiring mid-scan is reported, instead of making the scan panic.
+- Each step costs Redis about 0.7 ms on 8.10.2 and 1.9 ms on 7.4.1, in the table below.
+- A key deleted or expired mid-scan is reported, instead of making the scan panic.
 - `COUNT` can only be changed in the code.
   `Scan` still takes it as a parameter, so a flag can be added back
-  if a site ever needs steps shorter than half a millisecond.
+  if a site ever needs shorter `SCAN` commands.
+
+Redis time per step, from the pipelined `COUNT` 1000 rows above:
+
+| Redis  |  `SCAN` | 1000 `MEMORY USAGE` |   step |
+|--------|--------:|--------------------:|-------:|
+| 7.4.1  | 0.59 ms |             1.33 ms | 1.9 ms |
+| 8.10.2 | 0.45 ms |             0.25 ms | 0.7 ms |
+
+The `SCAN` runs as one block.
+The pipelined commands arrive in several reads, between which Redis serves its other clients.
