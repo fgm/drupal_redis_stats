@@ -9,7 +9,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"os"
 
@@ -21,7 +20,7 @@ import (
 
 func getVerboseWriter(quiet bool) io.Writer {
 	if quiet {
-		return ioutil.Discard
+		return io.Discard
 	}
 	return os.Stderr
 }

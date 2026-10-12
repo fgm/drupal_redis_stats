@@ -118,7 +118,7 @@ func (mc *MockConn) Close() error { return nil }
 func (mc *MockConn) Err() error { return nil }
 
 // Do sends a command to the server and returns the received reply.
-func (mc *MockConn) Do(commandName string, args ...interface{}) (reply interface{}, err error) {
+func (mc *MockConn) Do(commandName string, args ...any) (reply any, err error) {
 	if commandName != "AUTH" {
 		return nil, errors.New("bad command")
 	}
@@ -144,13 +144,13 @@ func (mc *MockConn) Do(commandName string, args ...interface{}) (reply interface
 }
 
 // Send writes the command to the client's output buffer.
-func (mc *MockConn) Send(commandName string, args ...interface{}) error { return nil }
+func (mc *MockConn) Send(commandName string, args ...any) error { return nil }
 
 // Flush flushes the output buffer to the Redis server.
 func (mc *MockConn) Flush() error { return nil }
 
 // Receive receives a single reply from the Redis server
-func (mc *MockConn) Receive() (reply interface{}, err error) { return nil, nil }
+func (mc *MockConn) Receive() (reply any, err error) { return nil, nil }
 
 func TestAuthenticate(t *testing.T) {
 	checks := [...]struct {
