@@ -55,6 +55,7 @@ func TestScan(t *testing.T) {
 		pages: [][]string{
 			{p + ":render:a", p + ":render:bb", p + ":last_write_timestamp_cache_config"},
 			{p + ":data:c", p + ":config", p + ":not-a-bin:x"},
+			{p + ":render:_redis_last_delete_all", p + ":cachetags:node_list", p + ":flood:user.failed_login_ip:1.2.3.4", p + ":lock:cron"},
 		},
 	}
 	cs := CacheStats{Prefix: p}
@@ -62,7 +63,7 @@ func TestScan(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if expected := []string{p + ":*", p + ":*"}; !slices.Equal(fc.matches, expected) {
+	if expected := []string{p + ":*", p + ":*", p + ":*"}; !slices.Equal(fc.matches, expected) {
 		t.Errorf("got MATCH patterns %q, expected %q", fc.matches, expected)
 	}
 	if cs.TotalKeys != 9 {
@@ -86,8 +87,19 @@ func TestScan(t *testing.T) {
 			t.Errorf("bin %s: got %+v, expected %+v", bin, actual, expected)
 		}
 	}
-	if expected := (BinStats{Keys: 1, Size: size(p + ":last_write_timestamp_cache_config")}); cs.Timestamps != expected {
-		t.Errorf("got timestamps %+v, expected %+v", cs.Timestamps, expected)
+	others := [...]struct {
+		name             string
+		actual, expected BinStats
+	}{
+		{"timestamps", cs.Timestamps, BinStats{Keys: 2, Size: size(p+":last_write_timestamp_cache_config", p+":render:_redis_last_delete_all")}},
+		{"cache tags", cs.CacheTags, BinStats{Keys: 1, Size: size(p + ":cachetags:node_list")}},
+		{"flood", cs.Flood, BinStats{Keys: 1, Size: size(p + ":flood:user.failed_login_ip:1.2.3.4")}},
+		{"locks", cs.Locks, BinStats{Keys: 1, Size: size(p + ":lock:cron")}},
+	}
+	for _, other := range others {
+		if other.actual != other.expected {
+			t.Errorf("got %s %+v, expected %+v", other.name, other.actual, other.expected)
+		}
 	}
 	if cs.Unrecognized != 2 {
 		t.Errorf("got %d unrecognized keys, expected 2", cs.Unrecognized)

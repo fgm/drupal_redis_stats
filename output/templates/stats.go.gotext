@@ -13,8 +13,10 @@
 {{ printf $bf $k }} | {{ printf $kdf $v.Keys }} | {{ printf $sdf $v.Size -}}
 {{ end }}
 {{ template "hr.go.gotext" . }}
-{{- if .Stats.Timestamps.Keys }}
-{{ printf $bf .TimestampsLabel }} | {{ printf $kdf .Stats.Timestamps.Keys }} | {{ printf $sdf .Stats.Timestamps.Size }}
+{{- if .Others }}
+{{- range .Others }}
+{{ printf $bf .Label }} | {{ printf $kdf .Stats.Keys }} | {{ printf $sdf .Stats.Size }}
+{{- end }}
 {{ template "hr.go.gotext" . }}
 {{- end }}
 {{ printf $bf .BinsFooter }} | {{ printf $kdf .Stats.TotalKeys }} | {{ printf $sdf .Stats.TotalSize }}

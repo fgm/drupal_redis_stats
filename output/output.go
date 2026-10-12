@@ -10,6 +10,7 @@ import (
 	"math"
 	"strings"
 	"text/template"
+	"unicode/utf8"
 
 	"github.com/fgm/drupal_redis_stats/stats"
 )
@@ -28,10 +29,17 @@ func JSON(w io.Writer, stats *stats.CacheStats) error {
 	return nil
 }
 
+// row is a non-bin category shown between the bins and the total.
+type row struct {
+	Label string
+	Stats stats.BinStats
+}
+
 type templateData struct {
 	Stats                              *stats.CacheStats
+	Others                             []row
 	BinsHeader, KeysHeader, SizeHeader string
-	BinsFooter, TimestampsLabel        string
+	BinsFooter                         string
 	BinsLen, KeysLen, SizeLen          int
 }
 
@@ -60,21 +68,29 @@ func Text(w io.Writer, cs *stats.CacheStats) {
 	const keysHeader = "Keys"
 	const sizeHeader = "Data"
 	const binsFooter = "Total"
-	const timestampsLabel = "(last write timestamps)"
-	binsLen := max(cs.MaxBinNameLength(), len(binsFooter))
-	if cs.Timestamps.Keys > 0 {
-		binsLen = max(binsLen, len(timestampsLabel))
+	binsLen := max(cs.MaxBinNameLength(), utf8.RuneCountInString(binsFooter))
+	var others []row
+	for _, r := range []row{
+		{"(cache tags)", cs.CacheTags},
+		{"(flood)", cs.Flood},
+		{"(locks)", cs.Locks},
+		{"(timestamps)", cs.Timestamps},
+	} {
+		if r.Stats.Keys > 0 {
+			others = append(others, r)
+			binsLen = max(binsLen, utf8.RuneCountInString(r.Label))
+		}
 	}
 	data := templateData{
-		Stats:           cs,
-		BinsHeader:      binsHeader,
-		KeysHeader:      keysHeader,
-		SizeHeader:      sizeHeader,
-		BinsFooter:      binsFooter,
-		TimestampsLabel: timestampsLabel,
-		BinsLen:         binsLen,
-		KeysLen:         int(math.Max(float64(cs.ItemCountLength()), float64(len(keysHeader)))),
-		SizeLen:         int(math.Max(float64(cs.TotalSizeLength()), float64(len(sizeHeader)))),
+		Stats:      cs,
+		Others:     others,
+		BinsHeader: binsHeader,
+		KeysHeader: keysHeader,
+		SizeHeader: sizeHeader,
+		BinsFooter: binsFooter,
+		BinsLen:    binsLen,
+		KeysLen:    int(math.Max(float64(cs.ItemCountLength()), float64(len(keysHeader)))),
+		SizeLen:    int(math.Max(float64(cs.TotalSizeLength()), float64(len(sizeHeader)))),
 	}
 
 	err := tpl.Execute(w, data)

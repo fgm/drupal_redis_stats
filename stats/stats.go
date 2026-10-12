@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/gomodule/redigo/redis"
 
@@ -51,8 +52,15 @@ type CacheStats struct {
 	TotalKeys uint32 // Redis hardcoded limit.
 	Stats     map[string]BinStats
 
+	// CacheTags, Flood and Locks hold the keys of the redis module cache tag
+	// checksums, flood control and lock backends, which are not cache bins.
+	CacheTags BinStats `json:",omitzero"`
+	Flood     BinStats `json:",omitzero"`
+	Locks     BinStats `json:",omitzero"`
+
 	// Timestamps holds the last write timestamps of the bins used behind a
-	// ChainedFastBackend. They are not cache entries, so they belong to no bin.
+	// ChainedFastBackend, and the last delete-all timestamps of each bin.
+	// They are not cache entries, so they belong to no bin.
 	Timestamps BinStats `json:",omitzero"`
 
 	// Unrecognized counts the keys under the prefix which match no known format.
@@ -70,9 +78,12 @@ func globEscape(s string) string {
 keyPattern returns the SCAN MATCH pattern selecting the Drupal keys for a prefix,
 and the regexp classifying those keys.
 
-The redis module builds cache keys as <prefix>:<bin>:<cid>, except for the
-last write timestamps of a ChainedFastBackend, stored as
-<prefix>:last_write_timestamp_<bin>. When no prefix is configured, it uses
+The redis module builds cache keys as <prefix>:<bin>:<cid>, except for:
+  - the last write timestamps of a ChainedFastBackend: <prefix>:last_write_timestamp_<bin>
+  - the last delete-all timestamp of a bin: <prefix>:<bin>:_redis_last_delete_all
+  - cache tag checksums, flood control and locks: <prefix>:{cachetags,flood,lock}:<name>
+
+When no prefix is configured, it uses
 drupal.redis.<version>.<deployment_identifier>.<hash>.
 Per-bin cache_prefix entries do not apply: the module never passes a bin
 when resolving its prefix, although its README documents them.
@@ -82,7 +93,7 @@ func keyPattern(prefix string) (string, *regexp.Regexp) {
 	if prefix != "" {
 		match, rePrefix = globEscape(prefix)+":*", regexp.QuoteMeta(prefix)
 	}
-	return match, regexp.MustCompile(`^` + rePrefix + `:(?:last_write_timestamp_(\w+)$|(\w+):)`)
+	return match, regexp.MustCompile(`^` + rePrefix + `:(?:last_write_timestamp_(\w+)$|(cachetags|flood|lock):|(\w+):(_redis_last_delete_all$)?)`)
 }
 
 type keyKind int
@@ -91,9 +102,15 @@ const (
 	unknownKey keyKind = iota
 	binKey
 	timestampKey
+	cacheTagKey
+	floodKey
+	lockKey
 )
 
-// classify returns the kind of key, and the name of the bin it relates to.
+// otherKinds maps the non-bin key segments to their kind.
+var otherKinds = map[string]keyKind{"cachetags": cacheTagKey, "flood": floodKey, "lock": lockKey}
+
+// classify returns the kind of key, and the name of the bin it relates to, if any.
 func classify(re *regexp.Regexp, key string) (keyKind, string) {
 	sl := re.FindStringSubmatch(key)
 	switch {
@@ -101,8 +118,12 @@ func classify(re *regexp.Regexp, key string) (keyKind, string) {
 		return unknownKey, ""
 	case sl[1] != "":
 		return timestampKey, sl[1]
+	case sl[2] != "":
+		return otherKinds[sl[2]], ""
+	case sl[4] != "":
+		return timestampKey, sl[3]
 	default:
-		return binKey, sl[2]
+		return binKey, sl[3]
 	}
 }
 
@@ -116,6 +137,12 @@ func (cs *CacheStats) indexKeys(c redis.Conn, re *regexp.Regexp, keys []string) 
 			cs.Stats[bin] = binStats
 		case timestampKey:
 			cs.Timestamps.addEntry(c, key)
+		case cacheTagKey:
+			cs.CacheTags.addEntry(c, key)
+		case floodKey:
+			cs.Flood.addEntry(c, key)
+		case lockKey:
+			cs.Locks.addEntry(c, key)
 		default:
 			cs.Unrecognized++
 		}
@@ -126,14 +153,11 @@ func (cs *CacheStats) indexKeys(c redis.Conn, re *regexp.Regexp, keys []string) 
 MaxBinNameLength returns the length in runes of the longest bin name.
 */
 func (cs CacheStats) MaxBinNameLength() int {
-	var max int
+	var longest int
 	for k := range cs.Stats {
-		if len(k) > max {
-			max = len(k)
-		}
+		longest = max(longest, utf8.RuneCountInString(k))
 	}
-
-	return max
+	return longest
 }
 
 /*
@@ -189,10 +213,10 @@ func (cs CacheStats) MatchPattern() string {
 }
 
 /*
-MatchedKeys returns the number of keys counted in bins or as timestamps.
+MatchedKeys returns the number of keys counted in bins or in other categories.
 */
 func (cs CacheStats) MatchedKeys() uint32 {
-	sum := cs.Timestamps.Keys
+	sum := cs.CacheTags.Keys + cs.Flood.Keys + cs.Locks.Keys + cs.Timestamps.Keys
 	for _, v := range cs.Stats {
 		sum += v.Keys
 	}
@@ -214,7 +238,7 @@ TotalSize returns the total size used by the cache.
 By Redis MEMORY USAGE description, this includes both keys and data.
 */
 func (cs CacheStats) TotalSize() int64 {
-	sizeSum := cs.Timestamps.Size
+	sizeSum := cs.CacheTags.Size + cs.Flood.Size + cs.Locks.Size + cs.Timestamps.Size
 	for _, v := range cs.Stats {
 		sizeSum += v.Size
 	}

@@ -31,7 +31,13 @@ func TestKeyPattern(t *testing.T) {
 		kind               keyKind
 	}{
 		{"default prefix", "", defaultPrefix + ":render:entity_view:node:1", "drupal.redis.*", "render", binKey},
-		{"default prefix, cache tags", "", defaultPrefix + ":cachetags:node_list", "drupal.redis.*", "cachetags", binKey},
+		{"default prefix, cache tags", "", defaultPrefix + ":cachetags:node_list", "drupal.redis.*", "", cacheTagKey},
+		{"default prefix, flood", "", defaultPrefix + ":flood:user.failed_login_ip:1.2.3.4", "drupal.redis.*", "", floodKey},
+		{"default prefix, lock", "", defaultPrefix + ":lock:cron", "drupal.redis.*", "", lockKey},
+		{"default prefix, delete-all timestamp", "", defaultPrefix + ":render:_redis_last_delete_all", "drupal.redis.*", "render", timestampKey},
+		{"default prefix, cid after delete-all name", "", defaultPrefix + ":render:_redis_last_delete_all:x", "drupal.redis.*", "render", binKey},
+		{"default prefix, bin starting like lock", "", defaultPrefix + ":locks:x", "drupal.redis.*", "locks", binKey},
+		{"default prefix, flood without name", "", defaultPrefix + ":flood", "drupal.redis.*", "", unknownKey},
 		{"default prefix, timestamp", "", defaultPrefix + ":last_write_timestamp_cache_bootstrap", "drupal.redis.*", "cache_bootstrap", timestampKey},
 		{"default prefix, unknown format", "", "drupal.redis.10:no_bin", "drupal.redis.*", "", unknownKey},
 		{"default prefix, dots are literal", "", "drupalXredisX1:render:x", "drupal.redis.*", "", unknownKey},
@@ -66,12 +72,22 @@ func TestKeyPattern(t *testing.T) {
 func TestMatchedKeysAndTotalSize(t *testing.T) {
 	cs := CacheStats{
 		Stats:      map[string]BinStats{"a": {Keys: 2, Size: 10}, "b": {Keys: 3, Size: 20}},
+		CacheTags:  BinStats{Keys: 7, Size: 100},
+		Flood:      BinStats{Keys: 11, Size: 1000},
+		Locks:      BinStats{Keys: 13, Size: 10000},
 		Timestamps: BinStats{Keys: 1, Size: 5},
 	}
-	if actual := cs.MatchedKeys(); actual != 6 {
-		t.Errorf("got %d matched keys, expected 6", actual)
+	if actual := cs.MatchedKeys(); actual != 37 {
+		t.Errorf("got %d matched keys, expected 37", actual)
 	}
-	if actual := cs.TotalSize(); actual != 35 {
-		t.Errorf("got total size %d, expected 35", actual)
+	if actual := cs.TotalSize(); actual != 11135 {
+		t.Errorf("got total size %d, expected 11135", actual)
+	}
+}
+
+func TestMaxBinNameLength(t *testing.T) {
+	cs := CacheStats{Stats: map[string]BinStats{"data": {}, "réndér": {}}}
+	if actual := cs.MaxBinNameLength(); actual != 6 {
+		t.Errorf("got %d, expected 6 runes", actual)
 	}
 }
