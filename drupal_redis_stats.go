@@ -61,7 +61,13 @@ func warn(l *log.Logger, cs *stats.CacheStats) {
 	case n > 1:
 		l.Printf("skipped %d keys matching no known Drupal format", n)
 	}
-	if cs.MatchedKeys()+cs.Unrecognized > 0 {
+	switch n := cs.Expired; {
+	case n == 1:
+		l.Print("skipped 1 key which expired during the scan")
+	case n > 1:
+		l.Printf("skipped %d keys which expired during the scan", n)
+	}
+	if cs.MatchedKeys()+cs.Unrecognized+cs.Expired > 0 {
 		return
 	}
 	switch n := cs.TotalKeys; n {
@@ -102,15 +108,15 @@ func main() {
 	}
 	defer c.Close()
 
-	stats := stats.CacheStats{Prefix: *prefix}
-	if err = stats.Scan(c, 0, verboseWriter); err != nil {
+	cs := stats.CacheStats{Prefix: *prefix}
+	if err = cs.Scan(c, stats.ScanCount, 0, verboseWriter); err != nil {
 		log.Fatalf("failed SCAN: %v", err)
 	}
-	warn(log.Default(), &stats)
+	warn(log.Default(), &cs)
 
 	if *jsonOutput {
-		_ = output.JSON(os.Stdout, &stats)
+		_ = output.JSON(os.Stdout, &cs)
 	} else {
-		output.Text(os.Stdout, &stats)
+		output.Text(os.Stdout, &cs)
 	}
 }

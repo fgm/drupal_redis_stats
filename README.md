@@ -52,6 +52,18 @@ go install github.com/fgm/drupal_redis_stats@latest
 - `-q` disables the progress bar used during the database SCAN loop
 
 
+### Impact on the site
+
+The scan walks the database in `SCAN` steps of about 1000 hash table buckets,
+and measures each step's keys in a single pipelined round trip.
+
+- Each step blocks Redis for about half a millisecond.
+- A million cache entries take about 3 seconds over a same-zone network.
+
+The measurements behind these figures, and the choices they support,
+are in [ADR-001](docs/adr/001-pipelining-and-a-fixed-scan-count.md).
+
+
 ### Sample results
 
 ```
@@ -92,8 +104,8 @@ Total              | 45760 | 49795911
     for the bins it serves, and the last delete-all timestamp of each bin.
 - _Total_ is the size of all the counted keys,
   but the number of keys in the whole database, matched or not.
-- Keys under the prefix which match no known format are skipped,
-  and their count is reported on stderr.
+- Keys under the prefix which match no known format, or which expire
+  during the scan, are skipped, and their count is reported on stderr.
 
 ## 🤖 AI and Automation Policy
 
