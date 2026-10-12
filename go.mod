@@ -4,7 +4,7 @@ go 1.27.2
 
 require (
 	github.com/gomodule/redigo v1.8.9
-	github.com/morikuni/aec v1.0.0
+	github.com/morikuni/aec v1.1.0
 	golang.org/x/term v0.17.0
 )
 
