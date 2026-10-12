@@ -82,16 +82,24 @@ func getCredentials(fs *flag.FlagSet, w io.Writer, flagDSN, flagUser, flagPass s
 	return
 }
 
-func authenticate(c redis.Conn, includeUser bool, user, pass string) error {
-	var err error
-	if includeUser {
-		_, err = c.Do("AUTH", user, pass)
-	} else {
-		_, err = c.Do("AUTH", pass)
-	}
+// open connects to the Redis server at dsn, authenticated with user and pass,
+// which take precedence over the credentials in the DSN.
+//
+// DialURL authenticates with the credentials in the DSN, before its SELECT:
+// they are removed, so that it authenticates with the user and pass options
+// instead, the only way for these to override them.
+// redigo sends no AUTH when pass is empty.
+func open(dsn, user, pass string, options ...redis.DialOption) (redis.Conn, error) {
+	u, err := url.Parse(dsn)
 	if err != nil {
-		return fmt.Errorf("failed AUTH: %w", err)
+		return nil, fmt.Errorf("failed parsing Redis DSN: %w", err)
 	}
+	u.User = nil
+	options = append(options, redis.DialUsername(user), redis.DialPassword(pass))
 
-	return nil
+	c, err := redis.DialURL(u.String(), options...)
+	if err != nil {
+		return nil, fmt.Errorf("failed dialing Redis URL: %w", err)
+	}
+	return c, nil
 }

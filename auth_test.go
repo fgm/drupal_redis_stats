@@ -6,10 +6,13 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 	"syscall"
 	"testing"
 
+	"github.com/fgm/drupal_redis_stats/internal/redistest"
+	"github.com/gomodule/redigo/redis"
 	"golang.org/x/term"
 )
 
@@ -107,78 +110,124 @@ func TestGetCredentials(t *testing.T) {
 	}
 }
 
-type MockConn struct {
-	RequirePass bool
-	User, Pass  string
-}
-
-func (mc *MockConn) Close() error { return nil }
-
-// Err returns a non-nil value when the connection is not usable.
-func (mc *MockConn) Err() error { return nil }
-
-// Do sends a command to the server and returns the received reply.
-func (mc *MockConn) Do(commandName string, args ...any) (reply any, err error) {
-	if commandName != "AUTH" {
-		return nil, errors.New("bad command")
+// clientInfo returns the user a connection is authenticated as, and its database,
+// as the server reports them.
+func clientInfo(c redis.Conn) (user string, db int, err error) {
+	info, err := redis.String(c.Do("CLIENT", "INFO"))
+	if err != nil {
+		return "", 0, err
 	}
-	switch {
-	case mc.RequirePass:
-		if len(args) != 1 {
-			return nil, fmt.Errorf("requirepass only accepts 1 argument for the password, got %d", len(args))
-		}
-		if args[0] == mc.Pass {
-			return "OK", nil
-		}
-		return "Bad password", errors.New("incorrect password")
-	case len(args) == 0:
-		return nil, errors.New("no argument, needs at least one")
-	case len(args) != 2:
-		return nil, fmt.Errorf("argument count: %d, ACL mode needs 2", len(args))
-	default:
-		if args[0] == mc.User && args[1] == mc.Pass {
-			return "OK", nil
-		}
-		return nil, errors.New("incorrect user or password")
-	}
-}
-
-// Send writes the command to the client's output buffer.
-func (mc *MockConn) Send(commandName string, args ...any) error { return nil }
-
-// Flush flushes the output buffer to the Redis server.
-func (mc *MockConn) Flush() error { return nil }
-
-// Receive receives a single reply from the Redis server
-func (mc *MockConn) Receive() (reply any, err error) { return nil, nil }
-
-func TestAuthenticate(t *testing.T) {
-	checks := [...]struct {
-		name             string
-		includeUser      bool
-		user, pass       string
-		requirePass      bool // redis.conf requirepass = true
-		aclUser, aclPass string
-		expErr           bool
-	}{
-		{"requirepass, only pass", false, "", "pass", true, "", "pass", false},
-		{"requirepass, no pass", false, "", "", true, "", "pass", true},
-		{"acl, only good user", true, "user", "", false, "user", "pass", true},
-		{"acl, only good pass", true, "", "pass", false, "user", "pass", true},
-		{"acl, both good", true, "user", "pass", false, "user", "pass", false},
-	}
-	for _, check := range checks {
-		t.Run(check.name, func(t *testing.T) {
-			conn := &MockConn{
-				RequirePass: check.requirePass,
-				User:        check.aclUser,
-				Pass:        check.aclPass,
+	for field := range strings.FieldsSeq(info) {
+		switch k, v, _ := strings.Cut(field, "="); k {
+		case "user":
+			user = v
+		case "db":
+			if db, err = strconv.Atoi(v); err != nil {
+				return "", 0, fmt.Errorf("invalid db in CLIENT INFO %q: %w", info, err)
 			}
-			err := authenticate(conn, check.includeUser, check.user, check.pass)
-			if err != nil && !check.expErr {
-				t.Fatalf("unexpected error: %v", err)
-			} else if err == nil && check.expErr {
-				t.Fatal("unexpected success")
+		}
+	}
+	return user, db, nil
+}
+
+// TestOpen checks the user and database of the connection for each way to
+// pass credentials, as main does: getCredentials, then open.
+func TestOpen(t *testing.T) {
+	for _, s := range redistest.Servers(t) {
+		t.Run(s.Image, func(t *testing.T) {
+			t.Parallel()
+			aclUser, aclPass := s.User(t, "~*", "+@all")
+			const defaultUser = "default" // The requirepass user.
+			checks := [...]struct {
+				name     string
+				userinfo string
+				args     []string
+				expUser  string // Empty when authentication must fail.
+			}{
+				{"dsn, only pass", redistest.Password + "@", nil, defaultUser},
+				{"dsn, empty user and pass", ":" + redistest.Password + "@", nil, defaultUser},
+				{"dsn, user and pass", aclUser + ":" + aclPass + "@", nil, aclUser},
+				{"dsn, wrong pass", aclUser + ":wrong@", nil, ""},
+				{"pass flag", "", []string{"-pass", redistest.Password}, defaultUser},
+				{"user and pass flags", "", []string{"-user", aclUser, "-pass", aclPass}, aclUser},
+				{"pass flag overriding the dsn", aclUser + ":wrong@", []string{"-pass", aclPass}, aclUser},
+				{"user and pass flags overriding the dsn", redistest.Password + "@", []string{"-user", aclUser, "-pass", aclPass}, aclUser},
+				{"no credentials", "", nil, ""},
+			}
+			for _, check := range checks {
+				// Opening only reads: no database needs reserving.
+				for _, db := range []int{0, 1} {
+					t.Run(fmt.Sprintf("%s, db %d", check.name, db), func(t *testing.T) {
+						t.Parallel()
+						fs := flag.NewFlagSet("test", flag.ContinueOnError)
+						userFlag := fs.String("user", "", "")
+						passFlag := fs.String("pass", "", "")
+						dsnFlag := fs.String("dsn", "", "")
+						dsn := fmt.Sprintf("redis://%s%s/%d", check.userinfo, s.Addr(), db)
+						if err := fs.Parse(append([]string{"-dsn", dsn}, check.args...)); err != nil {
+							t.Fatalf("failed parsing flags: %v", err)
+						}
+						user, pass, err := getCredentials(fs, io.Discard, *dsnFlag, *userFlag, *passFlag)
+						if err != nil {
+							t.Fatalf("failed obtaining credentials: %v", err)
+						}
+
+						c, err := open(*dsnFlag, user, pass)
+						if err == nil {
+							defer c.Close()
+							var actualUser string
+							var actualDB int
+							// Unauthenticated on DB 0, open succeeds, as it sends no command:
+							// the first command fails instead.
+							if actualUser, actualDB, err = clientInfo(c); err == nil {
+								if actualUser != check.expUser || actualDB != db {
+									t.Errorf("got user %q on db %d, expected %q on db %d", actualUser, actualDB, check.expUser, db)
+								}
+							}
+						}
+						if expErr := check.expUser == ""; (err != nil) != expErr {
+							t.Errorf("got error %v, expected one: %t", err, expErr)
+						}
+					})
+				}
+			}
+		})
+	}
+}
+
+// TestOpenInvalidDSN checks that open rejects each kind of invalid DSN,
+// and reports where it failed: its own parsing, redigo's, or the server.
+//
+// Parsing in open is only reached when both -user and -pass are given,
+// since getCredentials parses the DSN otherwise.
+func TestOpenInvalidDSN(t *testing.T) {
+	for _, s := range redistest.Servers(t) {
+		t.Run(s.Image, func(t *testing.T) {
+			t.Parallel()
+			checks := [...]struct {
+				name, dsn    string
+				expPrefix    string
+				expSubstring string
+			}{
+				{"unparsable", ":localhost/0", "failed parsing Redis DSN", "missing protocol scheme"},
+				{"wrong scheme", "http://" + s.Addr() + "/0", "failed dialing Redis URL", "invalid redis URL scheme"},
+				{"non-numeric database", "redis://" + s.Addr() + "/x", "failed dialing Redis URL", "invalid database"},
+				// The servers have databases 0 to 63.
+				{"database out of range", "redis://" + s.Addr() + "/64", "failed dialing Redis URL", "DB index is out of range"},
+				// Port 1 is privileged, and its TCPMUX service is obsolete: nothing listens on it.
+				{"nothing listening", "redis://127.0.0.1:1/0", "failed dialing Redis URL", "connection refused"},
+			}
+			for _, check := range checks {
+				t.Run(check.name, func(t *testing.T) {
+					c, err := open(check.dsn, "", redistest.Password)
+					if err == nil {
+						c.Close()
+						t.Fatal("expected an error")
+					}
+					if msg := err.Error(); !strings.HasPrefix(msg, check.expPrefix) || !strings.Contains(msg, check.expSubstring) {
+						t.Errorf("got error %q, expected %q, containing %q", msg, check.expPrefix, check.expSubstring)
+					}
+				})
 			}
 		})
 	}

@@ -16,6 +16,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -96,6 +97,16 @@ func Servers(t testing.TB) []*Server {
 // create the containers and to dial its reaper, and a connection outlives
 // the context it was dialed with.
 func start() {
+	// go test runs each package in its own process, and Testcontainers shares
+	// one reaper between the processes of a session. A process finding that
+	// reaper created but not yet running fails instead of waiting for it
+	// (testcontainers/testcontainers-go#3242), so each process gets its own
+	// session, hence its own reaper, unless one is already set.
+	// The value meets the constraints of the session ID documented in
+	// https://github.com/testcontainers/testcontainers-go/blob/main/docs/features/test_session_semantics.md#overriding-the-session-id
+	if os.Getenv("TESTCONTAINERS_SESSION_ID") == "" {
+		_ = os.Setenv("TESTCONTAINERS_SESSION_ID", fmt.Sprintf("drupal_redis_stats-%d-%d", os.Getpid(), time.Now().UnixNano()))
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), startTimeout)
 	defer cancel()
 	results := make([]*tcredis.RedisContainer, len(Images))
@@ -127,6 +138,12 @@ func start() {
 		}
 		servers = append(servers, &Server{Image: Images[i], addr: addr})
 	}
+}
+
+// Addr returns the host:port the server listens on,
+// for URLs which URL cannot build, such as those without credentials.
+func (s *Server) Addr() string {
+	return s.addr
 }
 
 // URL returns the URL of a database on the server, for user and pass.

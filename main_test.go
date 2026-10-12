@@ -4,11 +4,17 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"os"
 	"strings"
 	"testing"
 
+	"github.com/fgm/drupal_redis_stats/internal/redistest"
 	"github.com/fgm/drupal_redis_stats/stats"
 )
+
+func TestMain(m *testing.M) {
+	os.Exit(redistest.Main(m))
+}
 
 func TestIsFlagPassed(t *testing.T) {
 	const name = "f1"
