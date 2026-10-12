@@ -59,7 +59,7 @@ func TestJSON(t *testing.T) {
 	for _, expectation := range sampleExpectations {
 		expected := strconv.Itoa(expectation.value)
 		if pos := strings.Index(j, expected); pos <= 0 {
-			t.Errorf("Did not find expected value %sampleStats for %sampleStats", expected, expectation.name)
+			t.Errorf("Did not find expected value %s for %s", expected, expectation.name)
 		}
 	}
 }
@@ -99,8 +99,102 @@ func TestText(t *testing.T) {
 	for _, expectation := range sampleExpectations {
 		expected := strconv.Itoa(expectation.value)
 		if pos := strings.Index(actual, expected); pos <= 0 {
-			t.Errorf("Did not find expected value %sampleStats for %sampleStats", expected, expectation.name)
+			t.Errorf("Did not find expected value %s for %s", expected, expectation.name)
 		}
+	}
+}
+
+func TestTimestamps(t *testing.T) {
+	const label = "(timestamps)"
+	withTimestamps := sampleStats
+	withTimestamps.Timestamps = stats.BinStats{Keys: 3, Size: 168}
+
+	tests := [...]struct {
+		name     string
+		stats    *stats.CacheStats
+		expected bool
+	}{
+		{"absent", &sampleStats, false},
+		{"present", &withTimestamps, true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			text := strings.Builder{}
+			output.Text(&text, test.stats)
+			if actual := strings.Contains(text.String(), label); actual != test.expected {
+				t.Errorf("text has timestamps row: %t, expected %t:\n%s", actual, test.expected, text.String())
+			}
+			j := strings.Builder{}
+			_ = output.JSON(&j, test.stats)
+			if actual := strings.Contains(j.String(), `"Timestamps":{"Keys":3,"Size":168}`); actual != test.expected {
+				t.Errorf("JSON has timestamps: %t, expected %t: %s", actual, test.expected, j.String())
+			}
+			if !test.expected && strings.Contains(j.String(), "Timestamps") {
+				t.Errorf("JSON has an empty timestamps field: %s", j.String())
+			}
+		})
+	}
+}
+
+func TestJSONOtherCategories(t *testing.T) {
+	cs := stats.CacheStats{CacheTags: stats.BinStats{Keys: 1, Size: 2}, Locks: stats.BinStats{Keys: 3, Size: 4}}
+	w := strings.Builder{}
+	_ = output.JSON(&w, &cs)
+	j := w.String()
+	for _, expected := range []string{`"CacheTags":{"Keys":1,"Size":2}`, `"Locks":{"Keys":3,"Size":4}`} {
+		if !strings.Contains(j, expected) {
+			t.Errorf("missing %s in %s", expected, j)
+		}
+	}
+	if strings.Contains(j, "Flood") {
+		t.Errorf("JSON has an empty Flood field: %s", j)
+	}
+}
+
+func TestTextLayout(t *testing.T) {
+	bins := map[string]stats.BinStats{"render": {Keys: 3, Size: 150}, "data": {Keys: 1, Size: 20}}
+	tests := [...]struct {
+		name     string
+		stats    stats.CacheStats
+		expected string
+	}{
+		{"no timestamps", stats.CacheStats{TotalKeys: 4, Stats: bins}, `Bin    | Keys | Data
+-------+------+-----
+data   |    1 |   20
+render |    3 |  150
+-------+------+-----
+Total  |    4 |  170
+`},
+		{"other categories, label wider than bins", stats.CacheStats{TotalKeys: 14, Stats: bins,
+			CacheTags: stats.BinStats{Keys: 5, Size: 500}, Locks: stats.BinStats{Keys: 2, Size: 80}, Timestamps: stats.BinStats{Keys: 2, Size: 1000}}, `Bin          | Keys | Data
+-------------+------+-----
+data         |    1 |   20
+render       |    3 |  150
+-------------+------+-----
+(cache tags) |    5 |  500
+(locks)      |    2 |   80
+(timestamps) |    2 | 1000
+-------------+------+-----
+Total        |   14 | 1750
+`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			w := strings.Builder{}
+			output.Text(&w, &test.stats)
+			if actual := w.String(); actual != test.expected {
+				t.Errorf("got:\n%s\nexpected:\n%s", actual, test.expected)
+			}
+		})
+	}
+}
+
+func TestTextTimestampsOnly(t *testing.T) {
+	const row = "(timestamps) |    2 |  160\n"
+	w := strings.Builder{}
+	output.Text(&w, &stats.CacheStats{TotalKeys: 2, Stats: map[string]stats.BinStats{}, Timestamps: stats.BinStats{Keys: 2, Size: 160}})
+	if !strings.Contains(w.String(), row) {
+		t.Errorf("missing timestamps row %q in:\n%s", row, w.String())
 	}
 }
 
